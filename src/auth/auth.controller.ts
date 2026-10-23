@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service.js';
 import { detectDevice } from '../users/device.util.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { PresenceGateway } from '../presence/presence.gateway.js';
+import { AccessLogsService } from '../access-logs/access-logs.service.js';
 
 const ACCESS_COOKIE = 'eugestor_token';
 const REFRESH_COOKIE = 'eugestor_refresh';
@@ -20,6 +21,7 @@ export class AuthController {
     private readonly usersService: UsersService,
     private readonly refreshTokens: RefreshTokenService,
     private readonly presence: PresenceGateway,
+    private readonly accessLogs: AccessLogsService,
   ) {}
 
   private setAuthCookies(
@@ -53,7 +55,14 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const device = detectDevice(req.headers['user-agent']);
-    const result = await this.authService.login(dto, device);
+    const result = await this.authService.login(dto, device).catch(async (error: unknown) => {
+      if (error instanceof UnauthorizedException) {
+        const user = await this.usersService.findByEmail(dto.email);
+        await this.accessLogs.record(user, device, dto, req.ip, req.headers['user-agent'], 'INVALID');
+      }
+      throw error;
+    });
+    await this.accessLogs.record(result.user, device, dto, req.ip, req.headers['user-agent']);
     this.setAuthCookies(res, result.accessToken, result.refreshToken, !!dto.keepConnected);
     return { user: result.user };
   }

@@ -81,11 +81,11 @@ describe('sidebar HTTP access control', () => {
     const created = await request(app.getHttpServer()).post('/navigation').auth(token('admin'), { type: 'bearer' }).send({ label: 'Financeiro' }).expect(201);
     await request(app.getHttpServer()).get(`/navigation/${created.body.key}`).auth(token('member'), { type: 'bearer' }).expect(403);
     const blocked = await request(app.getHttpServer()).get('/navigation').auth(token('member'), { type: 'bearer' }).expect(200);
-    expect(blocked.body.map((item: SidebarItem) => item.key)).toEqual(['inicio']);
+    expect(blocked.body).toEqual([]);
     memberPermissions = [created.body.key];
     await request(app.getHttpServer()).get(`/navigation/${created.body.key}`).auth(token('member'), { type: 'bearer' }).expect(200);
     const allowed = await request(app.getHttpServer()).get('/navigation').auth(token('member'), { type: 'bearer' }).expect(200);
-    expect(allowed.body).toHaveLength(2);
+    expect(allowed.body.map((item: SidebarItem) => item.key)).toEqual([created.body.key]);
   });
 
   it('rejects empty labels and unknown entries', async () => {
@@ -125,7 +125,7 @@ describe('sidebar HTTP access control', () => {
     expect(children[0].embedUrl).toBe('https://example.com/chat');
     memberPermissions = [children[0].key];
     const menu = await request(app.getHttpServer()).get('/navigation').auth(token('member'), { type: 'bearer' }).expect(200);
-    expect(menu.body.map((item: SidebarItem) => item.key)).toEqual(['inicio', parent.body.key, children[0].key]);
+    expect(menu.body.map((item: SidebarItem) => item.key)).toEqual([parent.body.key, children[0].key]);
     expect(menu.body.find((item: SidebarItem) => item.key === parent.body.key).href).toBeNull();
     await request(app.getHttpServer()).get(`/navigation/${parent.body.key}`).auth(token('member'), { type: 'bearer' }).expect(403);
     await request(app.getHttpServer()).get(`/navigation/${children[0].key}`).auth(token('member'), { type: 'bearer' }).expect(200);

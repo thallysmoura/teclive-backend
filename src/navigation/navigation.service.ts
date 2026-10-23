@@ -13,10 +13,10 @@ export class NavigationService {
     const items = await this.prisma.sidebarItem.findMany({ orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
     if (user.role === 'ADMIN') {
       const totalUsers = await this.prisma.user.count();
-      return items.map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item);
+      return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item);
     }
     const visible = new Set(items.filter((item) => user.permissions.includes(item.key)).map((item) => item.parentKey).filter(Boolean));
-    return items.filter((item) => item.section === 'main' && (item.key === 'inicio' || user.permissions.includes(item.key) || visible.has(item.key)))
+    return items.filter((item) => (item.key === 'log_acesso' && user.permissions.includes('log_acesso')) || (item.section === 'main' && (user.permissions.includes(item.key) || visible.has(item.key))))
       .map((item) => visible.has(item.key) && !user.permissions.includes(item.key) ? { ...item, href: null, embedUrl: null } : item);
   }
 

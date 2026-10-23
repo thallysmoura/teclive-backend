@@ -10,7 +10,7 @@ describe('custom page permissions', () => {
     saved = [];
     const prisma = {
       sidebarItem: {
-        findMany: async ({ where }: { where: { key: { in: string[] } } }) => where.key.in.includes('item_financeiro') ? [{ key: 'item_financeiro' }] : [],
+        findMany: async ({ where }: { where: { key: { in: string[] } } }) => ['item_financeiro', 'log_acesso'].filter((key) => where.key.in.includes(key)).map((key) => ({ key })),
       },
       user: { update: async ({ data }: { data: { permissions: string[] } }) => { saved = data.permissions; return { id: 'ana', permissions: saved }; } },
     } as unknown as PrismaService;
@@ -19,6 +19,12 @@ describe('custom page permissions', () => {
   it('grants a new page permission together with existing built-in permissions', async () => {
     await service.updatePermissions('ana', ['inicio', 'item_financeiro']);
     expect(saved).toEqual(['inicio', 'item_financeiro']);
+  });
+  it('allows granting and revoking access-log permission explicitly', async () => {
+    await service.updatePermissions('ana', ['log_acesso']);
+    expect(saved).toEqual(['log_acesso']);
+    await service.updatePermissions('ana', []);
+    expect(saved).toEqual([]);
   });
   it.each(['unknown_key', 'administrativo'])('rejects non-page permission %s without updating the account', async (key) => {
     await expect(service.updatePermissions('ana', [key])).rejects.toMatchObject({ status: 400 });

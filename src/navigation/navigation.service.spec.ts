@@ -14,7 +14,7 @@ describe('persistent sidebar navigation', () => {
       { key: 'item_financeiro', label: 'Financeiro', href: '/items/item_financeiro', section: 'main', sortOrder: 1, embedUrl: null, parentKey: null, createdById: null },
     ];
     const prisma = {
-      user: { count: async () => 6, findUnique: async ({ where }: { where: { id: string } }) => where.id === 'missing' ? null : { id: where.id, role: where.id === 'admin' ? 'ADMIN' : 'USER', permissions: where.id === 'member' ? ['item_financeiro'] : [] } },
+      user: { count: async () => 6, findUnique: async ({ where }: { where: { id: string } }) => where.id === 'missing' ? null : { id: where.id, role: where.id.startsWith('admin') ? 'ADMIN' : 'USER', permissions: where.id === 'member' ? ['item_financeiro'] : where.id.endsWith('allowed') ? ['log_acesso'] : [] } },
       sidebarItem: {
         findMany: async (args?: { where?: { parentKey?: string } }) => args?.where?.parentKey ? items.filter((item) => item.parentKey === args.where!.parentKey) : [...items],
         findUnique: async ({ where }: { where: { key?: string; href?: string } }) => items.find((item) => where.key ? item.key === where.key : item.href === where.href) ?? null,
@@ -40,8 +40,15 @@ describe('persistent sidebar navigation', () => {
     expect((await service.listForUser('member')).every((item) => !('badge' in item))).toBe(true);
   });
   it('only shows permitted main entries to regular users', async () => {
-    expect((await service.listForUser('member')).map((item) => item.key)).toEqual(['inicio', 'item_financeiro']);
-    expect((await service.listForUser('pending')).map((item) => item.key)).toEqual(['inicio']);
+    expect((await service.listForUser('member')).map((item) => item.key)).toEqual(['item_financeiro']);
+    expect(await service.listForUser('pending')).toEqual([]);
+  });
+  it('shows access logs only after an explicit grant, including admins', async () => {
+    items.push({ key: 'log_acesso', label: 'Log de acesso', href: '/access-logs', section: 'admin', sortOrder: 1, embedUrl: null, parentKey: null, createdById: null });
+    expect((await service.listForUser('admin')).some((item) => item.key === 'log_acesso')).toBe(false);
+    expect((await service.listForUser('admin-allowed')).some((item) => item.key === 'log_acesso')).toBe(true);
+    expect((await service.listForUser('member-allowed')).some((item) => item.key === 'log_acesso')).toBe(true);
+    expect((await service.listForUser('member')).some((item) => item.key === 'log_acesso')).toBe(false);
   });
   it('creates a stable internal page and independent permission key', async () => {
     const item = await service.create('Contratos', undefined, undefined, undefined, 'admin');

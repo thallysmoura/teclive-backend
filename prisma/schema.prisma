@@ -32,6 +32,8 @@ model User {
   createdAt     DateTime       @default(now())
   refreshTokens RefreshToken[]
   sidebarItems SidebarItem[] @relation("SidebarCreator")
+  notifications Notification[]
+  accessLogs AccessLog[]
 
   @@map("users")
 }
@@ -67,4 +69,44 @@ model SidebarItem {
   @@map("sidebar_items")
   @@index([parentKey])
   @@index([createdById])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String   @db.VarChar(160)
+  message   String   @db.Text
+  data      Json?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+model AccessLog {
+  id String @id @default(uuid())
+  userId String?
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userName String @db.VarChar(100)
+  userEmail String @db.VarChar(254)
+  avatarUrl String?
+  status String @default("VALID") @db.VarChar(16)
+  device String @db.VarChar(16)
+  userAgent String? @db.VarChar(512)
+  ip String? @db.VarChar(64)
+  locationStatus String @default("not_requested") @db.VarChar(20)
+  latitude Float?
+  longitude Float?
+  accuracy Float?
+  city String? @db.VarChar(160)
+  region String? @db.VarChar(160)
+  country String? @db.VarChar(2)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc), id])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("access_logs")
 }
