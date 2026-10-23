@@ -7,13 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+}
+
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
   passwordHash  String
   name          String
+  role          Role           @default(USER)
+  status        UserStatus     @default(ACTIVE)
+  permissions   String[]       @default([])
+  avatarUrl     String?
+  lastLoginAt   DateTime?
+  lastSeenAt    DateTime?
+  lastDevice    String?
   createdAt     DateTime       @default(now())
   refreshTokens RefreshToken[]
+  sidebarItems SidebarItem[] @relation("SidebarCreator")
 
   @@map("users")
 }
@@ -31,4 +49,22 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model SidebarItem {
+  key       String  @id
+  label     String  @db.VarChar(80)
+  href      String? @unique
+  embedUrl  String?
+  parentKey String?
+  createdById String?
+  createdBy User? @relation("SidebarCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  parent SidebarItem? @relation("SidebarChildren", fields: [parentKey], references: [key], onDelete: Cascade)
+  children SidebarItem[] @relation("SidebarChildren")
+  section   String  @default("main") @db.VarChar(16)
+  sortOrder Int     @default(0)
+
+  @@map("sidebar_items")
+  @@index([parentKey])
+  @@index([createdById])
 }

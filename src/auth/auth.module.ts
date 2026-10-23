@@ -6,10 +6,12 @@ import { AuthService } from './auth.service.js';
 import { JwtStrategy } from './jwt.strategy.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { UsersModule } from '../users/users.module.js';
+import { PresenceModule } from '../presence/presence.module.js';
 
 @Module({
   imports: [
     UsersModule,
+    PresenceModule,
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET ?? 'eugestor-dev-secret-change-me',

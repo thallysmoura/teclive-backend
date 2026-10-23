@@ -23,7 +23,7 @@ export class AuthService {
     );
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, device: string) {
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
@@ -36,11 +36,19 @@ export class AuthService {
 
     const accessToken = await this.signAccessToken(user);
     const refreshToken = await this.refreshTokens.issue(user.id, !!dto.keepConnected);
+    await this.usersService.recordLogin(user.id, device);
 
     return {
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, name: user.name },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        status: user.status,
+        permissions: user.permissions,
+      },
     };
   }
 

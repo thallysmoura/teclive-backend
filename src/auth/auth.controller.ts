@@ -5,7 +5,9 @@ import { LoginDto } from './dto/login.dto.js';
 import { CheckEmailDto } from './dto/check-email.dto.js';
 import { JwtAuthGuard } from './jwt-auth.guard.js';
 import { UsersService } from '../users/users.service.js';
+import { detectDevice } from '../users/device.util.js';
 import { RefreshTokenService } from './refresh-token.service.js';
+import { PresenceGateway } from '../presence/presence.gateway.js';
 
 const ACCESS_COOKIE = 'eugestor_token';
 const REFRESH_COOKIE = 'eugestor_refresh';
@@ -17,6 +19,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly usersService: UsersService,
     private readonly refreshTokens: RefreshTokenService,
+    private readonly presence: PresenceGateway,
   ) {}
 
   private setAuthCookies(
@@ -44,8 +47,13 @@ export class AuthController {
   }
 
   @Post('login')
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const result = await this.authService.login(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const device = detectDevice(req.headers['user-agent']);
+    const result = await this.authService.login(dto, device);
     this.setAuthCookies(res, result.accessToken, result.refreshToken, !!dto.keepConnected);
     return { user: result.user };
   }
@@ -74,6 +82,7 @@ export class AuthController {
     if (rawRefreshToken) {
       await this.refreshTokens.revoke(rawRefreshToken);
     }
+    this.presence.disconnectSession(req.cookies?.[ACCESS_COOKIE]);
     res.clearCookie(ACCESS_COOKIE, { path: '/' });
     res.clearCookie(REFRESH_COOKIE, { path: '/auth' });
     return { ok: true };
@@ -85,6 +94,15 @@ export class AuthController {
     const payload = req.user as { id: string; email: string };
     const user = await this.usersService.findById(payload.id);
     if (!user) return null;
-    return { id: user.id, email: user.email, name: user.name };
+    void this.usersService.touchLastSeen(user.id);
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status,
+      permissions: user.permissions,
+      avatarUrl: user.avatarUrl,
+    };
   }
 }
