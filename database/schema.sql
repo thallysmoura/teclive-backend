@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict dBwbjeEzsAPWjNfbWoaNH5WYCfWqP1UimqIPrdbD0h5pDD2HM5jgkGa7UvYpQJ3
+\restrict 6rHmKB6nQKBK0fhL8Pxz4QGh765nPExb4XnIRG7wWTpnfhuNzvVLMfTfcM3dKro
 
 -- Dumped from database version 16.15
 -- Dumped by pg_dump version 16.15
@@ -82,6 +82,42 @@ CREATE TABLE public.access_logs (
     status character varying(16) DEFAULT 'VALID'::character varying NOT NULL,
     CONSTRAINT access_logs_location_check CHECK ((((("locationStatus")::text = 'shared'::text) AND (latitude IS NOT NULL) AND (longitude IS NOT NULL) AND ((latitude >= ('-90'::integer)::double precision) AND (latitude <= (90)::double precision)) AND ((longitude >= ('-180'::integer)::double precision) AND (longitude <= (180)::double precision))) OR ((("locationStatus")::text = ANY ((ARRAY['not_requested'::character varying, 'denied'::character varying, 'unavailable'::character varying])::text[])) AND (latitude IS NULL) AND (longitude IS NULL) AND (accuracy IS NULL)))),
     CONSTRAINT access_logs_status_check CHECK (((status)::text = ANY ((ARRAY['VALID'::character varying, 'INVALID'::character varying])::text[])))
+);
+
+
+--
+-- Name: company_profile; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.company_profile (
+    id text DEFAULT 'main'::text NOT NULL,
+    cnpj character varying(14) NOT NULL,
+    "legalName" character varying(160) NOT NULL,
+    "tradeName" character varying(160) DEFAULT ''::character varying NOT NULL,
+    email character varying(254) DEFAULT ''::character varying NOT NULL,
+    phone character varying(20) DEFAULT ''::character varying NOT NULL,
+    "postalCode" character varying(8) NOT NULL,
+    street character varying(160) NOT NULL,
+    number character varying(20) NOT NULL,
+    district character varying(100) NOT NULL,
+    complement character varying(160) DEFAULT ''::character varying NOT NULL,
+    city character varying(100) NOT NULL,
+    state character varying(2) NOT NULL,
+    "municipalRegistration" character varying(40) DEFAULT ''::character varying NOT NULL,
+    "stateRegistration" character varying(40) DEFAULT ''::character varying NOT NULL,
+    "substituteRegistration" character varying(40) DEFAULT ''::character varying NOT NULL,
+    "taxRegime" character varying(24) NOT NULL,
+    cnae character varying(7) DEFAULT ''::character varying NOT NULL,
+    "accountantEnabled" boolean DEFAULT false NOT NULL,
+    "accountantName" character varying(100) DEFAULT ''::character varying NOT NULL,
+    "accountantEmail" character varying(254) DEFAULT ''::character varying NOT NULL,
+    "accountantPhone" character varying(20) DEFAULT ''::character varying NOT NULL,
+    "accountantCrc" character varying(40) DEFAULT ''::character varying NOT NULL,
+    "logoDataUrl" text,
+    "boletoLogoDataUrl" text,
+    "createdAt" timestamp(3) without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    "updatedAt" timestamp(3) without time zone NOT NULL,
+    CONSTRAINT company_profile_singleton_check CHECK ((id = 'main'::text))
 );
 
 
@@ -166,6 +202,14 @@ ALTER TABLE ONLY public._prisma_migrations
 
 ALTER TABLE ONLY public.access_logs
     ADD CONSTRAINT access_logs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: company_profile company_profile_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.company_profile
+    ADD CONSTRAINT company_profile_pkey PRIMARY KEY (id);
 
 
 --
@@ -314,4 +358,4 @@ ALTER TABLE ONLY public.sidebar_items
 -- PostgreSQL database dump complete
 --
 
-\unrestrict dBwbjeEzsAPWjNfbWoaNH5WYCfWqP1UimqIPrdbD0h5pDD2HM5jgkGa7UvYpQJ3
+\unrestrict 6rHmKB6nQKBK0fhL8Pxz4QGh765nPExb4XnIRG7wWTpnfhuNzvVLMfTfcM3dKro

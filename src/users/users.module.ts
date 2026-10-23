@@ -9,11 +9,14 @@ import { AccessLogsService } from '../access-logs/access-logs.service.js';
 import { AccessLogsController } from '../access-logs/access-logs.controller.js';
 import { LocationService } from '../access-logs/location.service.js';
 import { AccessLogsPermissionGuard } from '../access-logs/access-logs-permission.guard.js';
+import { CompanyController } from '../company/company.controller.js';
+import { CompanyService } from '../company/company.service.js';
+import { CompanyPermissionGuard } from '../company/company-permission.guard.js';
 
 @Module({
   imports: [PresenceModule],
-  controllers: [UsersController, NavigationController, AccessLogsController],
-  providers: [UsersService, AdminGuard, NavigationService, AccessLogsService, LocationService, AccessLogsPermissionGuard],
+  controllers: [UsersController, NavigationController, AccessLogsController, CompanyController],
+  providers: [UsersService, AdminGuard, NavigationService, AccessLogsService, LocationService, AccessLogsPermissionGuard, CompanyService, CompanyPermissionGuard],
   exports: [UsersService, AccessLogsService],
 })
 export class UsersModule {}

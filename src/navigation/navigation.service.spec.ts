@@ -14,7 +14,7 @@ describe('persistent sidebar navigation', () => {
       { key: 'item_financeiro', label: 'Financeiro', href: '/items/item_financeiro', section: 'main', sortOrder: 1, embedUrl: null, parentKey: null, createdById: null },
     ];
     const prisma = {
-      user: { count: async () => 6, findUnique: async ({ where }: { where: { id: string } }) => where.id === 'missing' ? null : { id: where.id, role: where.id.startsWith('admin') ? 'ADMIN' : 'USER', permissions: where.id === 'member' ? ['item_financeiro'] : where.id.endsWith('allowed') ? ['log_acesso'] : [] } },
+      user: { count: async () => 6, findUnique: async ({ where }: { where: { id: string } }) => where.id === 'missing' ? null : { id: where.id, role: where.id.startsWith('admin') ? 'ADMIN' : 'USER', permissions: where.id === 'company-member' ? ['dados_empresa'] : where.id === 'member' ? ['item_financeiro'] : where.id.endsWith('allowed') ? ['log_acesso'] : [] } },
       sidebarItem: {
         findMany: async (args?: { where?: { parentKey?: string } }) => args?.where?.parentKey ? items.filter((item) => item.parentKey === args.where!.parentKey) : [...items],
         findUnique: async ({ where }: { where: { key?: string; href?: string } }) => items.find((item) => where.key ? item.key === where.key : item.href === where.href) ?? null,
@@ -57,6 +57,12 @@ describe('persistent sidebar navigation', () => {
     expect(item.href).toBe('/items/contratos');
     expect(item.section).toBe('main');
     expect((await service.listForUser('admin')).some((candidate) => candidate.label === 'Contratos')).toBe(true);
+  });
+  it('shows company data to administrators and explicitly granted members', async () => {
+    items.push({ key: 'dados_empresa', label: 'Dados da empresa', href: '/company', section: 'admin', sortOrder: 2, embedUrl: null, parentKey: null, createdById: null });
+    expect((await service.listForUser('company-member')).map((item) => item.key)).toEqual(['dados_empresa']);
+    expect((await service.listForUser('admin')).some((item) => item.key === 'dados_empresa')).toBe(true);
+    expect((await service.listForUser('pending')).some((item) => item.key === 'dados_empresa')).toBe(false);
   });
   it('renames an entry without breaking its route or permission key', async () => {
     const item = await service.rename('inicio', 'Indicadores');

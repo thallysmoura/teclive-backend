@@ -10,7 +10,7 @@ describe('custom page permissions', () => {
     saved = [];
     const prisma = {
       sidebarItem: {
-        findMany: async ({ where }: { where: { key: { in: string[] } } }) => ['item_financeiro', 'log_acesso'].filter((key) => where.key.in.includes(key)).map((key) => ({ key })),
+        findMany: async ({ where }: { where: { key?: { in: string[] } } }) => ['item_financeiro', 'log_acesso', 'dados_empresa'].filter((key) => !where.key || where.key.in.includes(key)).map((key) => ({ key })),
       },
       user: { update: async ({ data }: { data: { permissions: string[] } }) => { saved = data.permissions; return { id: 'ana', permissions: saved }; } },
     } as unknown as PrismaService;
@@ -23,6 +23,13 @@ describe('custom page permissions', () => {
   it('allows granting and revoking access-log permission explicitly', async () => {
     await service.updatePermissions('ana', ['log_acesso']);
     expect(saved).toEqual(['log_acesso']);
+    await service.updatePermissions('ana', []);
+    expect(saved).toEqual([]);
+  });
+  it('includes company data in the catalog and accepts granting and revoking it', async () => {
+    expect(await service.permissionsCatalog()).toContainEqual({ key: 'dados_empresa' });
+    await service.updatePermissions('ana', ['dados_empresa']);
+    expect(saved).toEqual(['dados_empresa']);
     await service.updatePermissions('ana', []);
     expect(saved).toEqual([]);
   });

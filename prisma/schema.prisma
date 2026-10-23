@@ -110,3 +110,35 @@ model AccessLog {
   @@index([userId, createdAt(sort: Desc)])
   @@map("access_logs")
 }
+
+model CompanyProfile {
+  id String @id @default("main")
+  cnpj String @db.VarChar(14)
+  legalName String @db.VarChar(160)
+  tradeName String @default("") @db.VarChar(160)
+  email String @default("") @db.VarChar(254)
+  phone String @default("") @db.VarChar(20)
+  postalCode String @db.VarChar(8)
+  street String @db.VarChar(160)
+  number String @db.VarChar(20)
+  district String @db.VarChar(100)
+  complement String @default("") @db.VarChar(160)
+  city String @db.VarChar(100)
+  state String @db.VarChar(2)
+  municipalRegistration String @default("") @db.VarChar(40)
+  stateRegistration String @default("") @db.VarChar(40)
+  substituteRegistration String @default("") @db.VarChar(40)
+  taxRegime String @db.VarChar(24)
+  cnae String @default("") @db.VarChar(7)
+  accountantEnabled Boolean @default(false)
+  accountantName String @default("") @db.VarChar(100)
+  accountantEmail String @default("") @db.VarChar(254)
+  accountantPhone String @default("") @db.VarChar(20)
+  accountantCrc String @default("") @db.VarChar(40)
+  logoDataUrl String? @db.Text
+  boletoLogoDataUrl String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("company_profile")
+}

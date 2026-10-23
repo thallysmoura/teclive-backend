@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-23T16:56:43.169Z",
+  "generatedAt": "2026-10-23T17:08:02.071Z",
   "database": "eugestor",
   "tool": "pg_dump (PostgreSQL) 16.15",
   "schemaOnly": true,
@@ -9,10 +9,11 @@
   "tables": [
     "_prisma_migrations",
     "access_logs",
+    "company_profile",
     "notifications",
     "refresh_tokens",
     "sidebar_items",
     "users"
   ],
-  "sha256": "25c2d5ab22df8a9ec60074f41f38fcf42a952c4463cc304d98efc7c9b863a40a"
+  "sha256": "2bc309edeaef34cf981cb9415f370035a6f3f8f1747af79056aae19d4fbac987"
 }
