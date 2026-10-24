@@ -49,7 +49,7 @@ export class PeopleService {
         : {}),
     };
     const dir = params.desc ? 'desc' : 'asc';
-    const orderBy: Prisma.PersonOrderByWithRelationInput | Prisma.PersonOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'name' ? { name: dir } : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
+    const orderBy: Prisma.PersonOrderByWithRelationInput | Prisma.PersonOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'name' ? { name: dir } : params.orderBy === 'document' ? [{ document: { sort: dir, nulls: 'last' } }, { name: 'asc' }] : params.orderBy === 'roles' ? [{ isClient: 'desc' }, { isSupplier: 'desc' }, { isEmployee: 'desc' }, { name: 'asc' }] : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
     const page = Math.max(1, params.page ?? 1);
     const [lista, totalRegistros] = await Promise.all([
       this.prisma.person.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),

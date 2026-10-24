@@ -87,6 +87,7 @@ export class QuotesService {
     rows.sort((a, b) => {
       if (key === 'total') return (a.total - b.total) * dir;
       if (key === 'recurring') return (a.recurring - b.recurring) * dir;
+      if (key === 'status') return (a.status - b.status || b.number - a.number) * dir;
       return (a.number - b.number) * dir;
     });
     const page = Math.max(1, params.page ?? 1);

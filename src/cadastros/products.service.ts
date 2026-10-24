@@ -46,7 +46,7 @@ export class ProductsService {
       ...(params.q ? { OR: [{ description: { contains: params.q, mode: 'insensitive' } }, { identifier: { contains: params.q, mode: 'insensitive' } }, { supplierCode: { contains: params.q, mode: 'insensitive' } }] } : {}),
     };
     const dir = params.desc ? 'desc' : 'asc';
-    const orderBy: Prisma.StockProductOrderByWithRelationInput | Prisma.StockProductOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'salePrice' ? { salePrice: dir } : params.orderBy === 'description' ? { description: dir } : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
+    const orderBy: Prisma.StockProductOrderByWithRelationInput | Prisma.StockProductOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'salePrice' ? { salePrice: dir } : params.orderBy === 'description' ? { description: dir } : params.orderBy === 'identifier' ? [{ identifier: { sort: dir, nulls: 'last' } }, { description: 'asc' }] : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
     const page = Math.max(1, params.page ?? 1);
     const [lista, totalRegistros] = await Promise.all([
       this.prisma.stockProduct.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),

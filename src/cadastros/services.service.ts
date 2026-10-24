@@ -36,7 +36,7 @@ export class ServicesService {
       ...(params.category ? { category: params.category } : {}),
     };
     const dir = params.desc ? 'desc' : 'asc';
-    const orderBy: Prisma.ServiceItemOrderByWithRelationInput | Prisma.ServiceItemOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'price' ? { price: dir } : params.orderBy === 'description' ? { description: dir } : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
+    const orderBy: Prisma.ServiceItemOrderByWithRelationInput | Prisma.ServiceItemOrderByWithRelationInput[] = params.orderBy === 'isActive' ? { isActive: dir } : params.orderBy === 'price' ? { price: dir } : params.orderBy === 'description' ? { description: dir } : params.orderBy === 'modality' ? [{ modality: dir }, { description: 'asc' }] : [{ legacyId: { sort: 'desc', nulls: 'first' } }, { createdAt: 'desc' }];
     const page = Math.max(1, params.page ?? 1);
     const [lista, totalRegistros] = await Promise.all([
       this.prisma.serviceItem.findMany({ where, orderBy, skip: (page - 1) * PAGE_SIZE, take: PAGE_SIZE }),
