@@ -26,6 +26,11 @@ export class PresenceGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     @Inject(JwtService) private readonly jwt: JwtService,
   ) {}
 
+  /** Avisa os administradores conectados para atualizarem as notificações na hora. */
+  notifyAdmins() {
+    this.server?.to('admins').emit('notification:new');
+  }
+
   private readonly broadcast = (change: { id: string; presence: Presence }) => {
     this.server.to('admins').to(`user:${change.id}`).emit('presence:update', change);
   };

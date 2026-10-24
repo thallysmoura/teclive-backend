@@ -64,6 +64,7 @@ export class AuthController {
       throw error;
     });
     await this.accessLogs.record(result.user, device, dto, req.ip, req.headers['user-agent']);
+    if (await this.usersService.notifyAccessRequest(result.user.id).catch(() => false)) this.presence.notifyAdmins();
     this.setAuthCookies(res, result.accessToken, result.refreshToken, !!dto.keepConnected);
     return { user: result.user };
   }

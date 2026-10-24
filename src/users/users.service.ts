@@ -33,6 +33,34 @@ function generatePassword() {
 export class UsersService {
   constructor(private readonly prisma: PrismaService, private readonly presence: PresenceService) {}
 
+  /**
+   * Quem entra sem nenhuma permissão fica "aguardando": avisa os administradores (foto, nome e horário vão na notificação).
+   * Devolve true quando criou aviso novo (não repete enquanto houver um não lido dessa mesma pessoa).
+   */
+  async notifyAccessRequest(userId: string): Promise<boolean> {
+    const person = await this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, email: true, role: true, permissions: true, avatarUrl: true } });
+    if (!person || person.role === 'ADMIN' || person.permissions.length > 0) return false;
+    const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
+    if (!admins.length) return false;
+    const open = await this.prisma.notification.findMany({
+      where: { readAt: null, userId: { in: admins.map((a) => a.id) }, data: { path: ['userId'], equals: person.id } },
+      select: { userId: true },
+    });
+    const already = new Set(open.map((n) => n.userId));
+    const targets = admins.filter((a) => !already.has(a.id));
+    if (!targets.length) return false;
+    const at = new Date().toISOString();
+    await this.prisma.notification.createMany({
+      data: targets.map((a) => ({
+        userId: a.id,
+        title: 'Nova pessoa aguardando permissão',
+        message: `${person.name} acessou o sistema e aguarda liberação de acesso.`,
+        data: { type: 'access-request', userId: person.id, name: person.name, email: person.email, avatarUrl: person.avatarUrl, at, url: '/access-control' },
+      })),
+    });
+    return true;
+  }
+
   findByEmail(email: string) {
     return this.prisma.user.findUnique({ where: { email } });
   }
