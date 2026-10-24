@@ -94,6 +94,27 @@ export class QuotesService {
     return { lista: rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE), totalRegistros: rows.length, tamanhoPagina: PAGE_SIZE, totalValue };
   }
 
+  /** Orçamentos abertos no mês (horário de Manaus, UTC-4), agrupados por situação. */
+  async indicators(month?: string) {
+    const match = /^(\d{4})-(\d{2})$/.exec(month ?? '');
+    const now = new Date(Date.now() - 4 * 3600000);
+    const year = match ? Number(match[1]) : now.getUTCFullYear();
+    const monthIndex = match ? Number(match[2]) - 1 : now.getUTCMonth();
+    if (monthIndex < 0 || monthIndex > 11) throw new BadRequestException('Mês inválido.');
+    const from = new Date(Date.UTC(year, monthIndex, 1, 4));
+    const until = new Date(Date.UTC(year, monthIndex + 1, 1, 4));
+    const quotes = await this.prisma.quote.findMany({ where: { openedAt: { gte: from, lt: until } }, include: { items: true } });
+    const rows = quotes.map((q) => this.row(q));
+    const order = [3, 4, 7, 8, 6, 2];
+    const groups = order
+      .map((status) => {
+        const list = rows.filter((r) => r.status === status);
+        return { status, label: STATUS_LABEL[status], count: list.length, value: Math.round(list.reduce((s, r) => s + r.total, 0) * 100) / 100 };
+      })
+      .filter((g) => g.count > 0);
+    return { month: `${year}-${String(monthIndex + 1).padStart(2, '0')}`, groups, totalCount: groups.reduce((s, g) => s + g.count, 0), totalValue: Math.round(groups.reduce((s, g) => s + g.value, 0) * 100) / 100 };
+  }
+
   async filters() {
     const quotes = await this.prisma.quote.findMany({ select: { sellerName: true, refusalReason: true } });
     const uniq = (values: (string | null)[]) => [...new Set(values.filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b, 'pt-BR'));

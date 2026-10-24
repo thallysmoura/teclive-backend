@@ -19,6 +19,9 @@ export class QuotesController {
     return this.service.list({ q, from, until, status, modality, personType, seller, reason, hideCancelled: hideCancelled === 'true', page: Number(page) || 1, orderBy, desc: desc === undefined ? true : desc === 'true' });
   }
 
+  @Get('indicators')
+  indicators(@Query('month') month?: string) { return this.service.indicators(month); }
+
   @Get('stats')
   stats() { return this.service.stats(); }
 
