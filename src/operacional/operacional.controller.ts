@@ -53,6 +53,7 @@ export class ServiceOrdersController {
   @Get('filters') filters() { return this.service.filters(); }
   @Get('board') board() { return this.service.board(); }
   @Get('schedule') schedule(@Query('from') from?: string, @Query('until') until?: string) { return this.service.schedule(from, until); }
+  @Get('works') works() { return this.service.works(); }
   @Get('management') management() { return this.service.management(); }
   @Post('from-quote/:quoteId') async fromQuote(@Req() req: Request, @Param('quoteId') quoteId: string) { return this.service.createFromQuote(await this.user(req), quoteId); }
   @Get('operations') operations() { return this.service.operations(); }

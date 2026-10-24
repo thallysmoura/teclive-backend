@@ -372,6 +372,44 @@ export class ServiceOrdersService {
     };
   }
 
+
+  /** Gestão de Obras: uma linha enriquecida por OS (o painel filtra e agrega no navegador) + orçamentos ganhos ainda sem OS. */
+  async works() {
+    const rows = await this.prisma.serviceOrder.findMany({ orderBy: { openedAt: 'desc' } });
+    const works = rows.map((o) => {
+      const d = (o.detail ?? {}) as Detail;
+      const products = d.produtos ?? [];
+      const qty = products.reduce((s, i) => s + i.quantidade, 0);
+      const delivered = products.reduce((s, i) => s + Math.min(i.quantidade, i.quantidadeEntregue ?? 0), 0);
+      const status = this.effective(o);
+      const pending = this.pending(o);
+      const lateDays = status === 1 && o.scheduleEnd ? Math.max(1, Math.floor((Date.now() - o.scheduleEnd.getTime()) / 864e5)) : 0;
+      return {
+        id: o.id, number: o.number, type: o.type, status, personName: o.personName, personNickname: o.personNickname, defect: o.defectName, address: o.address,
+        openedAt: o.openedAt, scheduleStart: o.scheduleStart, scheduleEnd: o.scheduleEnd, closedAt: o.closedAt, technicians: o.technicians, sellers: o.sellers, quoteNumbers: o.quoteNumbers,
+        totalServices: asNumber(o.totalServices), totalProducts: asNumber(o.totalProducts), total: money(asNumber(o.totalServices) + asNumber(o.totalProducts)),
+        serviceCount: d.servicos?.length ?? 0, productCount: products.length, qty, delivered, attachments: d.anexos?.length ?? 0, calls: d.atendimentos?.length ?? 0, pendencies: pending.length, lateDays,
+        checklist: {
+          technician: o.technicians.length > 0, scheduled: !!o.scheduleStart, items: (d.servicos?.length ?? 0) + products.length > 0,
+          materials: qty === 0 || delivered >= qty, photos: (d.anexos?.length ?? 0) > 0, onTime: lateDays === 0,
+        },
+      };
+    });
+    const linked = new Map<number, number>();
+    for (const o of rows.filter((r) => r.status !== 2)) {
+      const d = (o.detail ?? {}) as Detail;
+      for (const i of [...(d.servicos ?? []), ...(d.produtos ?? [])]) if (i.orcamento) linked.set(i.orcamento.numero, (linked.get(i.orcamento.numero) ?? 0) + 1);
+    }
+    const won = await this.prisma.quote.findMany({ where: { status: { in: [4, 7] }, wonAt: { not: null } }, orderBy: { wonAt: 'desc' }, include: { _count: { select: { items: { where: { kind: { in: ['SERVICE', 'PRODUCT'] } } } } } } });
+    const pendingQuotes = won.filter((q) => (linked.get(q.number) ?? 0) < q._count.items);
+    const sums = await this.prisma.quoteItem.groupBy({ by: ['quoteId'], _sum: { total: true }, where: { quoteId: { in: pendingQuotes.map((q) => q.id) }, kind: { not: 'RECURRING' } } });
+    const total = new Map(sums.map((r) => [r.quoteId, asNumber(r._sum.total)]));
+    return {
+      generatedAt: new Date().toISOString(), works,
+      pendingQuotes: pendingQuotes.map((q) => ({ id: q.id, number: q.number, personName: q.personName, title: q.title, wonAt: q.wonAt, total: money(total.get(q.id) ?? 0) })),
+    };
+  }
+
   /* ---------- painéis ---------- */
 
   async board() {
