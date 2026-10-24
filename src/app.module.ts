@@ -8,11 +8,12 @@ import { StockLocationsModule } from './stock-locations/stock-locations.module.j
 import { ComercialModule } from './comercial/comercial.module.js';
 import { OperacionalModule } from './operacional/operacional.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { SettingsModule } from './settings/settings.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { CadastrosModule } from './cadastros/cadastros.module.js';
 
 @Module({
-  imports: [PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, NotificationsModule],
+  imports: [PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, SettingsModule, NotificationsModule],
   controllers: [AppController],
   providers: [AppService],
 })

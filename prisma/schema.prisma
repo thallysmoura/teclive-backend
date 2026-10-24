@@ -565,3 +565,12 @@ model ServiceOrderFile {
   @@index([orderId])
   @@map("service_order_files")
 }
+
+model AppSetting {
+  key       String   @id @db.VarChar(80)
+  value     Json
+  updatedBy String?  @db.VarChar(200)
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
