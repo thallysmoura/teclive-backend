@@ -38,8 +38,8 @@ export class ServiceOrdersController {
 
   private async me(req: Request) {
     const id = (req.user as { id: string }).id;
-    const u = await this.prisma.user.findUnique({ where: { id }, select: { name: true } });
-    return { id, name: u?.name ?? 'Usuário' };
+    const u = await this.prisma.user.findUnique({ where: { id }, select: { name: true, role: true } });
+    return { id, name: u?.name ?? 'Usuário', role: u?.role ?? 'USER' };
   }
 
   @Get() list(
@@ -62,6 +62,8 @@ export class ServiceOrdersController {
   @Put(':id') async update(@Req() req: Request, @Param('id') id: string, @Body() b: OsInput) { return this.service.update(await this.user(req), id, b); }
   @Get(':id/comments') comments(@Param('id') id: string) { return this.service.comments(id); }
   @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string; fileIds?: string[] }) { return this.service.comment(await this.me(req), id, b ?? {}); }
+  @Put(':id/comments/:eventId') async editComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string, @Body() b: { text?: string }) { return this.service.editComment(await this.me(req), id, eventId, b?.text); }
+  @Delete(':id/comments/:eventId') async deleteComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string) { return this.service.deleteComment(await this.me(req), id, eventId); }
   @Post(':id/files') async upload(@Req() req: Request, @Param('id') id: string, @Body() b: { fileName?: string; mimeType?: string; fileBase64?: string }) { return this.service.uploadFile(await this.me(req), id, b ?? {}); }
   @Get(':id/files/:fileId') async file(@Param('id') id: string, @Param('fileId') fileId: string, @Res() res: Response) {
     const { fileName, mimeType, data } = await this.service.file(id, fileId);

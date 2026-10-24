@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Prisma, type ServiceOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -201,7 +201,7 @@ export class ServiceOrdersService {
     if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime)) throw new BadRequestException('Envie uma imagem JPG, PNG, WEBP ou GIF.');
     const data = Buffer.from(input.fileBase64 ?? '', 'base64');
     if (!data.length) throw new BadRequestException('Arquivo vazio.');
-    if (data.length > 560 * 1024) throw new BadRequestException('A imagem deve ter no máximo 550 KB (ela é reduzida automaticamente antes do envio).');
+    if (data.length > 3 * 1024 * 1024) throw new BadRequestException('A imagem deve ter no máximo 3 MB (ela é reduzida automaticamente antes do envio).');
     const file = await this.prisma.serviceOrderFile.create({ data: { orderId: id, fileName: (input.fileName ?? 'imagem').slice(0, 200), mimeType: mime, size: data.length, fileData: data, userId: user.id, userName: user.name } });
     return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size };
   }
@@ -232,6 +232,38 @@ export class ServiceOrdersService {
       });
     }
     return this.out(updated);
+  }
+
+  private canEdit(user: { id: string; role: string }, event: Record<string, unknown>) {
+    if (!event.id) throw new BadRequestException('Comentários importados do eugestor não podem ser alterados.');
+    if (user.role !== 'ADMIN' && event.usuarioId !== user.id) throw new ForbiddenException('Você só pode alterar os seus próprios comentários.');
+  }
+
+  async editComment(user: { id: string; name: string; role: string }, id: string, eventId: string, text?: string) {
+    const o = await this.load(id);
+    const d = (o.detail ?? {}) as Detail;
+    const event = (d.eventos ?? []).find((e) => e.id === eventId);
+    if (!event) throw new NotFoundException('Comentário não encontrado.');
+    this.canEdit(user, event);
+    const content = (text ?? '').trim();
+    const hasFiles = Array.isArray(event.anexos) && event.anexos.length > 0;
+    if (!content && !hasFiles) throw new BadRequestException('Escreva o comentário ou exclua-o.');
+    if (content.length > 4000) throw new BadRequestException('O comentário deve ter no máximo 4000 caracteres.');
+    event.conteudo = content || null;
+    event.editadoEm = new Date().toISOString();
+    return this.out(await this.touch(id, {}, d));
+  }
+
+  async deleteComment(user: { id: string; name: string; role: string }, id: string, eventId: string) {
+    const o = await this.load(id);
+    const d = (o.detail ?? {}) as Detail;
+    const event = (d.eventos ?? []).find((e) => e.id === eventId);
+    if (!event) throw new NotFoundException('Comentário não encontrado.');
+    this.canEdit(user, event);
+    const fileIds = ((event.anexos ?? []) as { id: string }[]).map((a) => a.id);
+    d.eventos = (d.eventos ?? []).filter((e) => e.id !== eventId);
+    if (fileIds.length) await this.prisma.serviceOrderFile.deleteMany({ where: { id: { in: fileIds }, orderId: id } });
+    return this.out(await this.touch(id, {}, d, { user: user.name, text: `Comentário excluído por '${user.name}'` }));
   }
 
   /** Só os comentários (para acompanhar em tempo real sem recarregar a OS toda). */
