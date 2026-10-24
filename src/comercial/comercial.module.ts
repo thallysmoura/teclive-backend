@@ -6,6 +6,7 @@ import { CalendarEventsService, QuoteModelsService, QuoteTemplatesService, Refus
 
 @Module({
   controllers: [QuotesController, RefusalReasonsController, SalesActionsController, QuoteModelsController, QuoteTemplatesController, CalendarEventsController],
+  exports: [QuotesService],
   providers: [QuotesService, RefusalReasonsService, SalesActionsService, QuoteModelsService, QuoteTemplatesService, CalendarEventsService],
 })
 export class ComercialModule {}

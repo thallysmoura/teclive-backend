@@ -6,5 +6,6 @@ import { ServiceOrdersService } from './service-orders.service.js';
 @Module({
   controllers: [LookupsController, ServiceOrdersController],
   providers: [LookupsService, ServiceOrdersService],
+  exports: [ServiceOrdersService],
 })
 export class OperacionalModule {}
