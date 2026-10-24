@@ -80,7 +80,7 @@ export class QuotesService {
     };
     const quotes = await this.prisma.quote.findMany({ where, include: { items: true } });
     let rows = quotes.map((q) => this.row(q));
-    if (params.status) rows = rows.filter((r) => r.status === Number(params.status));
+    if (params.status) { const wanted = String(params.status).split(',').map(Number); rows = rows.filter((r) => wanted.includes(r.status)); }
     if (params.hideCancelled) rows = rows.filter((r) => r.status !== QUOTE_STATUS.CANCELLED);
     const dir = params.desc === false ? 1 : -1;
     const key = params.orderBy ?? 'number';
