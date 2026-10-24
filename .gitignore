@@ -20,3 +20,8 @@ yarn-error.log*
 
 # prisma
 /prisma/migrations/*.lock
+
+# dados de clientes importados do eugestor (não versionar)
+prisma/data/cadastros.json
+prisma/data/comercial.json
+prisma/data/*.json

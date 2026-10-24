@@ -111,6 +111,52 @@ model AccessLog {
   @@map("access_logs")
 }
 
+model StockMovement {
+  id                String    @id @default(uuid())
+  legacyId          Int?      @unique
+  description       String   @db.VarChar(200)
+  movementDate       DateTime
+  cancellationDate    DateTime?
+  userName          String   @db.VarChar(160)
+  operation         Int
+  createdAt         DateTime @default(now())
+  items             StockMovementItem[]
+
+  @@map("stock_movements")
+}
+
+model StockMovementItem {
+  id           String        @id @default(uuid())
+  movementId   String
+  movement     StockMovement @relation(fields: [movementId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      StockProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  description  String        @db.VarChar(300)
+  type         String        @db.VarChar(10)
+  quantity     Decimal       @db.Decimal(14, 2)
+  unit         String        @db.VarChar(20)
+  cost         Decimal       @db.Decimal(14, 2)
+  locationName String        @db.VarChar(200)
+
+  @@map("stock_movement_items")
+}
+
+model StockLocation {
+  id          String   @id @default(uuid())
+  legacyId    Int?     @unique
+  description String   @db.VarChar(160)
+  isActive    Boolean  @default(true)
+  isPrincipal Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  balances    StockBalance[]
+
+  productBalances StockProductBalance[]
+
+  @@map("stock_locations")
+}
+
 model CompanyProfile {
   id String @id @default("main")
   cnpj String @db.VarChar(14)
@@ -141,4 +187,279 @@ model CompanyProfile {
   updatedAt DateTime @updatedAt
 
   @@map("company_profile")
+}
+
+model StockBalance {
+  id          String        @id @default(uuid())
+  locationId  String
+  location    StockLocation @relation(fields: [locationId], references: [id])
+  balanceDate DateTime      @default(now())
+  userName    String        @db.VarChar(160)
+  status      String        @default("OPEN") @db.VarChar(20)
+  filterType  String        @default("PRODUCTS") @db.VarChar(20)
+  filterIds   String[]
+  createdAt   DateTime      @default(now())
+
+  @@map("stock_balances")
+}
+
+model StockProduct {
+  id           String   @id @default(uuid())
+  description  String   @db.VarChar(300)
+  brand        String   @default("Geral") @db.VarChar(120)
+  productGroup String   @default("Geral") @db.VarChar(120)
+  unit         String   @db.VarChar(20)
+  unitName     String?  @db.VarChar(60)
+  legacyId     Int?     @unique
+  model        String?  @db.VarChar(200)
+  costPrice    Decimal? @db.Decimal(14, 2)
+  salePrice    Decimal? @db.Decimal(14, 2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  alternativeDescription String? @db.VarChar(300)
+  identifier   String?  @db.VarChar(60)
+  supplierCode String?  @db.VarChar(60)
+  barcode      String?  @db.VarChar(60)
+  allowNegativeStock Boolean @default(false)
+  allowRental  Boolean  @default(false)
+  margin       Decimal? @db.Decimal(8, 2)
+  balances     StockProductBalance[]
+  movementItems StockMovementItem[]
+
+  @@map("stock_products")
+}
+
+/// Marcas, grupos de produtos e ramos de atividade (mesma forma: descrição + ativo).
+model CatalogItem {
+  id          String   @id @default(uuid())
+  kind        String   @db.VarChar(30)
+  legacyId    Int?
+  description String   @db.VarChar(200)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@unique([kind, description])
+  @@unique([kind, legacyId])
+  @@map("catalog_items")
+}
+
+model ServiceItem {
+  id                  String   @id @default(uuid())
+  legacyId            Int?     @unique
+  description         String   @db.VarChar(200)
+  category            String?  @db.VarChar(200)
+  modality            Int      @default(1)
+  serviceType         Int      @default(3)
+  allowsRental        Boolean  @default(false)
+  blocksOnDelinquency Boolean  @default(false)
+  cost                Decimal  @default(0) @db.Decimal(14, 2)
+  margin              Decimal  @default(50) @db.Decimal(8, 2)
+  price               Decimal  @default(0) @db.Decimal(14, 2)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  @@map("service_items")
+}
+
+model Person {
+  id                    String   @id @default(uuid())
+  legacyId              Int?     @unique
+  type                  String   @default("F") @db.VarChar(1)
+  document              String?  @db.VarChar(20)
+  name                  String   @db.VarChar(200)
+  nickname              String?  @db.VarChar(200)
+  rg                    String?  @db.VarChar(30)
+  identifier            String?  @db.VarChar(60)
+  isClient              Boolean  @default(true)
+  isSupplier            Boolean  @default(false)
+  isEmployee            Boolean  @default(false)
+  isTechnician          Boolean  @default(false)
+  isCarrier             Boolean  @default(false)
+  isSeller              Boolean  @default(false)
+  taxpayerType          Int?
+  isFinalConsumer       Boolean  @default(false)
+  municipalRegistration String?  @db.VarChar(40)
+  stateRegistration     String?  @db.VarChar(40)
+  email                 String?  @db.VarChar(200)
+  phone                 String?  @db.VarChar(40)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  isLead                Boolean  @default(false)
+  sellerName            String?  @db.VarChar(200)
+  becameClientAt        DateTime?
+  quotes                Quote[]
+  salesActions          SalesAction[]
+
+  @@map("people")
+}
+
+model Quote {
+  id               String   @id @default(uuid())
+  legacyId         Int?     @unique
+  number           Int      @unique
+  title            String?  @db.VarChar(200)
+  personId         String?
+  person           Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  personName       String   @db.VarChar(200)
+  personNickname   String?  @db.VarChar(200)
+  personDocument   String?  @db.VarChar(20)
+  personType       String   @default("F") @db.VarChar(1)
+  personIsLead     Boolean  @default(false)
+  sellerName       String?  @db.VarChar(200)
+  status           Int      @default(3)
+  purpose          Int      @default(1)
+  modality         Int      @default(2)
+  openedAt         DateTime @default(now())
+  validUntil       DateTime
+  wonAt            DateTime?
+  releasedAt       DateTime?
+  cancelledAt      DateTime?
+  refusalReason    String?  @db.VarChar(200)
+  technicalSheet   String?
+  notes            String?
+  showNotes        Boolean  @default(false)
+  contactName      String?  @db.VarChar(200)
+  contactEmail     String?  @db.VarChar(200)
+  contactPhone     String?  @db.VarChar(40)
+  address          Json?
+  openedBy         String   @db.VarChar(200)
+  items            QuoteItem[]
+  payments         QuotePayment[]
+  history          QuoteHistory[]
+  attachments      QuoteAttachment[]
+  createdAt        DateTime @default(now())
+
+  @@map("quotes")
+}
+
+model QuoteItem {
+  id              String   @id @default(uuid())
+  quoteId         String
+  quote           Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  kind            String   @db.VarChar(12)
+  description     String   @db.VarChar(300)
+  identifier      String?  @db.VarChar(60)
+  unit            String?  @db.VarChar(20)
+  quantity        Decimal  @db.Decimal(14, 2)
+  unitValue       Decimal  @db.Decimal(14, 2)
+  discountValue   Decimal  @default(0) @db.Decimal(14, 2)
+  discountPercent Decimal  @default(0) @db.Decimal(8, 2)
+  total           Decimal  @db.Decimal(14, 2)
+  cost            Decimal  @default(0) @db.Decimal(14, 2)
+  rental          Boolean  @default(false)
+  sortOrder       Int      @default(0)
+
+  @@map("quote_items")
+}
+
+model QuotePayment {
+  id           String  @id @default(uuid())
+  quoteId      String
+  quote        Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  method       String  @db.VarChar(120)
+  installments Int     @default(1)
+  total        Decimal @db.Decimal(14, 2)
+  selected     Boolean @default(false)
+
+  @@map("quote_payments")
+}
+
+model QuoteHistory {
+  id          String   @id @default(uuid())
+  quoteId     String
+  quote       Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  userName    String   @db.VarChar(200)
+  description String   @db.VarChar(500)
+  at          DateTime
+
+  @@map("quote_history")
+}
+
+model RefusalReason {
+  id          String   @id @default(uuid())
+  description String   @db.VarChar(200)
+  usedWhen    String   @default("CLIENT") @db.VarChar(12)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("refusal_reasons")
+}
+
+model SalesAction {
+  id            String   @id @default(uuid())
+  personId      String?
+  person        Person?  @relation(fields: [personId], references: [id], onDelete: SetNull)
+  personName    String   @db.VarChar(200)
+  title         String   @db.VarChar(200)
+  actionDate    DateTime
+  durationHours Decimal  @default(0) @db.Decimal(6, 2)
+  channel       String   @db.VarChar(60)
+  supportTeam   String?  @db.VarChar(120)
+  description   String?
+  isActive      Boolean  @default(true)
+  createdBy     String   @db.VarChar(200)
+  createdAt     DateTime @default(now())
+
+  @@map("sales_actions")
+}
+
+model QuoteModel {
+  id          String   @id @default(uuid())
+  legacyId    Int?     @unique
+  description String   @db.VarChar(200)
+  createdAt   DateTime @default(now())
+
+  @@map("quote_models")
+}
+
+model QuoteTemplate {
+  id          String   @id @default(uuid())
+  description String   @db.VarChar(200)
+  fileName    String   @db.VarChar(200)
+  fileData    Bytes
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("quote_templates")
+}
+
+model CalendarEvent {
+  id          String   @id @default(uuid())
+  title       String   @db.VarChar(200)
+  startsAt    DateTime
+  endsAt      DateTime
+  allDay      Boolean  @default(false)
+  description String?
+  ownerName   String   @db.VarChar(200)
+  ownerId     String?
+  createdAt   DateTime @default(now())
+
+  @@map("calendar_events")
+}
+
+model StockProductBalance {
+  id         String        @id @default(uuid())
+  productId  String
+  product    StockProduct  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  locationId String
+  location   StockLocation @relation(fields: [locationId], references: [id])
+  quantity   Decimal       @db.Decimal(14, 2)
+
+  @@unique([productId, locationId])
+  @@map("stock_product_balances")
+}
+
+model QuoteAttachment {
+  id        String   @id @default(uuid())
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  fileName  String   @db.VarChar(200)
+  caption   String?  @db.VarChar(200)
+  mimeType  String   @db.VarChar(120)
+  size      Int
+  fileData  Bytes
+  userName  String   @db.VarChar(200)
+  createdAt DateTime @default(now())
+
+  @@map("quote_attachments")
 }
