@@ -464,3 +464,89 @@ model QuoteAttachment {
 
   @@map("quote_attachments")
 }
+
+// ---------- Operacional ----------
+
+model OpCause {
+  id          String   @id @default(uuid())
+  legacyId    Int?     @unique
+  description String   @db.VarChar(200)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("op_causes")
+}
+
+model OpSolution {
+  id          String   @id @default(uuid())
+  legacyId    Int?     @unique
+  description String   @db.VarChar(200)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("op_solutions")
+}
+
+model OpDefect {
+  id             String   @id @default(uuid())
+  legacyId       Int?     @unique
+  description    String   @db.VarChar(200)
+  serviceMinutes Int      @default(0)
+  closingMinutes Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@map("op_defects")
+}
+
+model OpQuestionnaire {
+  id            String   @id @default(uuid())
+  legacyId      Int?     @unique
+  title         String   @db.VarChar(200)
+  description   String?  @db.VarChar(500)
+  questionCount Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@map("op_questionnaires")
+}
+
+model ServiceOrder {
+  id             String    @id @default(uuid())
+  legacyId       Int?      @unique
+  number         Int       @unique
+  type           Int       @default(1)
+  purpose        Int       @default(0)
+  status         Int       @default(0)
+  defectName     String?   @db.VarChar(200)
+  personId       String?
+  personName     String    @db.VarChar(200)
+  personNickname String?   @db.VarChar(200)
+  personType     String    @default("F") @db.VarChar(1)
+  address        Json?
+  contact        Json?
+  openedBy       String    @default("—") @db.VarChar(200)
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+  cancelledAt    DateTime?
+  interruptedAt  DateTime?
+  scheduleStart  DateTime?
+  scheduleEnd    DateTime?
+  technicians    String[]  @default([])
+  sellers        String[]  @default([])
+  quoteNumbers   Int[]     @default([])
+  technicalSheet String?
+  totalServices  Decimal   @default(0) @db.Decimal(14, 2)
+  totalProducts  Decimal   @default(0) @db.Decimal(14, 2)
+  causeName      String?   @db.VarChar(200)
+  solutionName   String?   @db.VarChar(200)
+  paymentMethod  String?   @db.VarChar(100)
+  installments   Int?
+  detail         Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status])
+  @@index([scheduleStart])
+  @@map("service_orders")
+}

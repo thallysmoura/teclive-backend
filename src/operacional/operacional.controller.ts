@@ -1,0 +1,64 @@
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { LOOKUP_KINDS, LookupsService, type LookupKind } from './lookups.service.js';
+import { ServiceOrdersService, type OsInput } from './service-orders.service.js';
+
+const kindOf = (kind: string): LookupKind => {
+  if (!LOOKUP_KINDS.includes(kind as LookupKind)) throw new BadRequestException('Cadastro inválido.');
+  return kind as LookupKind;
+};
+
+@UseGuards(JwtAuthGuard)
+@Controller('op')
+export class LookupsController {
+  constructor(private readonly service: LookupsService) {}
+  @Get('options') options() { return this.service.options(); }
+  @Get(':kind') list(@Param('kind') kind: string, @Query('q') q?: string, @Query('exibirInativos') i?: string, @Query('page') p?: string, @Query('orderBy') o?: string, @Query('desc') d?: string) {
+    return this.service.list(kindOf(kind), { q: q?.trim() || undefined, exibirInativos: i === 'true', page: Number(p) || 1, orderBy: o, desc: d === 'true' });
+  }
+  @Get(':kind/:id') get(@Param('kind') kind: string, @Param('id') id: string) { return this.service.get(kindOf(kind), id); }
+  @Post(':kind') create(@Param('kind') kind: string, @Body() b: Record<string, never>) { return this.service.create(kindOf(kind), b); }
+  @Put(':kind/:id') update(@Param('kind') kind: string, @Param('id') id: string, @Body() b: Record<string, never>) { return this.service.update(kindOf(kind), id, b); }
+  @Post(':kind/:id/activate') activate(@Param('kind') kind: string, @Param('id') id: string) { return this.service.setActive(kindOf(kind), id, true); }
+  @Post(':kind/:id/inactivate') inactivate(@Param('kind') kind: string, @Param('id') id: string) { return this.service.setActive(kindOf(kind), id, false); }
+  @Delete(':kind/:id') remove(@Param('kind') kind: string, @Param('id') id: string) { return this.service.remove(kindOf(kind), id); }
+}
+
+@UseGuards(JwtAuthGuard)
+@Controller('service-orders')
+export class ServiceOrdersController {
+  constructor(private readonly service: ServiceOrdersService, private readonly prisma: PrismaService) {}
+
+  private async user(req: Request) {
+    const u = await this.prisma.user.findUnique({ where: { id: (req.user as { id: string }).id }, select: { name: true } });
+    return u?.name ?? 'Usuário';
+  }
+
+  @Get() list(
+    @Query('q') q?: string, @Query('from') from?: string, @Query('until') until?: string, @Query('status') status?: string, @Query('type') type?: string, @Query('technician') technician?: string,
+    @Query('seller') seller?: string, @Query('defect') defect?: string, @Query('cause') cause?: string, @Query('solution') solution?: string, @Query('hideCancelled') hide?: string,
+    @Query('page') page?: string, @Query('orderBy') orderBy?: string, @Query('desc') desc?: string,
+  ) {
+    return this.service.list({ q: q?.trim() || undefined, from, until, status, type, technician, seller, defect, cause, solution, hideCancelled: hide === 'true', page: Number(page) || 1, orderBy, desc: desc === undefined ? true : desc === 'true' });
+  }
+  @Get('stats') stats() { return this.service.stats(); }
+  @Get('filters') filters() { return this.service.filters(); }
+  @Get('board') board() { return this.service.board(); }
+  @Get('schedule') schedule(@Query('from') from?: string, @Query('until') until?: string) { return this.service.schedule(from, until); }
+  @Get('management') management() { return this.service.management(); }
+  @Post('from-quote/:quoteId') async fromQuote(@Req() req: Request, @Param('quoteId') quoteId: string) { return this.service.createFromQuote(await this.user(req), quoteId); }
+  @Get('operations') operations() { return this.service.operations(); }
+  @Get(':id') get(@Param('id') id: string) { return this.service.get(id); }
+  @Post() async create(@Req() req: Request, @Body() b: OsInput) { return this.service.create(await this.user(req), b); }
+  @Put(':id') async update(@Req() req: Request, @Param('id') id: string, @Body() b: OsInput) { return this.service.update(await this.user(req), id, b); }
+  @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string }) { return this.service.comment(await this.user(req), id, b.text); }
+  @Post(':id/items') async addItem(@Req() req: Request, @Param('id') id: string, @Body() b: Parameters<ServiceOrdersService['addItem']>[2]) { return this.service.addItem(await this.user(req), id, b); }
+  @Delete(':id/items/:itemId') async removeItem(@Req() req: Request, @Param('id') id: string, @Param('itemId', ParseIntPipe) itemId: number) { return this.service.removeItem(await this.user(req), id, itemId); }
+  @Post(':id/items/:itemId/deliver') async deliver(@Req() req: Request, @Param('id') id: string, @Param('itemId', ParseIntPipe) itemId: number, @Body() b: { quantity?: number }) { return this.service.deliver(await this.user(req), id, itemId, b?.quantity); }
+  @Post(':id/close') async close(@Req() req: Request, @Param('id') id: string, @Body() b: { cause?: string; solution?: string }) { return this.service.close(await this.user(req), id, b ?? {}); }
+  @Post(':id/cancel') async cancel(@Req() req: Request, @Param('id') id: string) { return this.service.cancel(await this.user(req), id); }
+  @Post(':id/reopen') async reopen(@Req() req: Request, @Param('id') id: string) { return this.service.reopen(await this.user(req), id); }
+  @Post(':id/interrupt') async interrupt(@Req() req: Request, @Param('id') id: string) { return this.service.interrupt(await this.user(req), id); }
+}
