@@ -1,5 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
+import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LOOKUP_KINDS, LookupsService, type LookupKind } from './lookups.service.js';
@@ -36,6 +36,12 @@ export class ServiceOrdersController {
     return u?.name ?? 'Usuário';
   }
 
+  private async me(req: Request) {
+    const id = (req.user as { id: string }).id;
+    const u = await this.prisma.user.findUnique({ where: { id }, select: { name: true } });
+    return { id, name: u?.name ?? 'Usuário' };
+  }
+
   @Get() list(
     @Query('q') q?: string, @Query('from') from?: string, @Query('until') until?: string, @Query('status') status?: string, @Query('type') type?: string, @Query('technician') technician?: string,
     @Query('seller') seller?: string, @Query('defect') defect?: string, @Query('cause') cause?: string, @Query('solution') solution?: string, @Query('hideCancelled') hide?: string,
@@ -53,7 +59,16 @@ export class ServiceOrdersController {
   @Get(':id') get(@Param('id') id: string) { return this.service.get(id); }
   @Post() async create(@Req() req: Request, @Body() b: OsInput) { return this.service.create(await this.user(req), b); }
   @Put(':id') async update(@Req() req: Request, @Param('id') id: string, @Body() b: OsInput) { return this.service.update(await this.user(req), id, b); }
-  @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string }) { return this.service.comment(await this.user(req), id, b.text); }
+  @Get(':id/comments') comments(@Param('id') id: string) { return this.service.comments(id); }
+  @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string; fileIds?: string[] }) { return this.service.comment(await this.me(req), id, b ?? {}); }
+  @Post(':id/files') async upload(@Req() req: Request, @Param('id') id: string, @Body() b: { fileName?: string; mimeType?: string; fileBase64?: string }) { return this.service.uploadFile(await this.me(req), id, b ?? {}); }
+  @Get(':id/files/:fileId') async file(@Param('id') id: string, @Param('fileId') fileId: string, @Res() res: Response) {
+    const { fileName, mimeType, data } = await this.service.file(id, fileId);
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.send(data);
+  }
   @Post(':id/items') async addItem(@Req() req: Request, @Param('id') id: string, @Body() b: Parameters<ServiceOrdersService['addItem']>[2]) { return this.service.addItem(await this.user(req), id, b); }
   @Delete(':id/items/:itemId') async removeItem(@Req() req: Request, @Param('id') id: string, @Param('itemId', ParseIntPipe) itemId: number) { return this.service.removeItem(await this.user(req), id, itemId); }
   @Post(':id/items/:itemId/deliver') async deliver(@Req() req: Request, @Param('id') id: string, @Param('itemId', ParseIntPipe) itemId: number, @Body() b: { quantity?: number }) { return this.service.deliver(await this.user(req), id, itemId, b?.quantity); }

@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { Prisma, type ServiceOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -93,7 +94,19 @@ export class ServiceOrdersService {
   async get(id: string) {
     const o = await this.prisma.serviceOrder.findUnique({ where: { id } });
     if (!o) throw new NotFoundException('Ordem de serviço não encontrada.');
-    return this.full(o);
+    return this.out(o);
+  }
+
+  /** Enriquece os comentários com a foto de quem escreveu (por id; os importados, pelo nome). */
+  private async out(o: ServiceOrder) {
+    const full = this.full(o);
+    const events = full.events as Record<string, unknown>[];
+    if (!events.length) return full;
+    const ids = events.map((e) => e.usuarioId as string | undefined).filter(Boolean) as string[];
+    const names = events.map((e) => e.usuario as string).filter(Boolean);
+    const users = await this.prisma.user.findMany({ where: { OR: [{ id: { in: ids } }, { name: { in: names } }] }, select: { id: true, name: true, avatarUrl: true } });
+    const byId = new Map(users.map((u) => [u.id, u.avatarUrl])), byName = new Map(users.map((u) => [u.name.toLowerCase(), u.avatarUrl]));
+    return { ...full, events: events.map((e) => ({ ...e, avatarUrl: (e.usuarioId ? byId.get(e.usuarioId as string) : undefined) ?? byName.get(String(e.usuario).toLowerCase()) ?? null })) };
   }
 
   private full(o: ServiceOrder) {
@@ -160,7 +173,7 @@ export class ServiceOrdersService {
     const last = await this.prisma.serviceOrder.aggregate({ _max: { number: true } });
     const number = (last._max.number ?? 0) + 1;
     const detail: Detail = { historico: [{ dataHora: new Date().toISOString(), descricao: `Ordem de Serviço aberta por '${userName}'`, nomeUsuario: userName, isLog: true }], eventos: [], servicos: [], produtos: [] };
-    return this.full(await this.prisma.serviceOrder.create({
+    return this.out(await this.prisma.serviceOrder.create({
       data: {
         number, type, personId: person.id, personName: person.name, personNickname: person.nickname, personType: person.type, address: (input.address ?? undefined) as Prisma.InputJsonValue | undefined,
         defectName: input.defectName?.trim() || null, technicalSheet: input.technicalSheet?.trim() || null, technicians: (input.technicians ?? []).filter(Boolean), openedBy: userName,
@@ -178,16 +191,53 @@ export class ServiceOrdersService {
       ...(input.scheduleStart !== undefined || input.scheduleEnd !== undefined ? this.dates({ scheduleStart: input.scheduleStart ?? o.scheduleStart?.toISOString(), scheduleEnd: input.scheduleEnd ?? o.scheduleEnd?.toISOString() }) : {}),
       ...(input.address ? { address: input.address as Prisma.InputJsonValue } : {}),
     };
-    return this.full(await this.touch(id, patch, o.detail as Detail, { user: userName, text: `Dados da OS alterados por '${userName}'` }));
+    return this.out(await this.touch(id, patch, o.detail as Detail, { user: userName, text: `Dados da OS alterados por '${userName}'` }));
   }
 
-  async comment(userName: string, id: string, text?: string) {
+  /** Envia uma imagem (já reduzida no navegador) e devolve o id para anexar a um comentário. */
+  async uploadFile(user: { id: string; name: string }, id: string, input: { fileName?: string; mimeType?: string; fileBase64?: string }) {
+    await this.load(id);
+    const mime = (input.mimeType ?? '').toLowerCase();
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime)) throw new BadRequestException('Envie uma imagem JPG, PNG, WEBP ou GIF.');
+    const data = Buffer.from(input.fileBase64 ?? '', 'base64');
+    if (!data.length) throw new BadRequestException('Arquivo vazio.');
+    if (data.length > 560 * 1024) throw new BadRequestException('A imagem deve ter no máximo 550 KB (ela é reduzida automaticamente antes do envio).');
+    const file = await this.prisma.serviceOrderFile.create({ data: { orderId: id, fileName: (input.fileName ?? 'imagem').slice(0, 200), mimeType: mime, size: data.length, fileData: data, userId: user.id, userName: user.name } });
+    return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size };
+  }
+
+  async file(id: string, fileId: string) {
+    const f = await this.prisma.serviceOrderFile.findFirst({ where: { id: fileId, orderId: id } });
+    if (!f) throw new NotFoundException('Arquivo não encontrado.');
+    return { fileName: f.fileName, mimeType: f.mimeType, data: Buffer.from(f.fileData) };
+  }
+
+  async comment(user: { id: string; name: string }, id: string, input: { text?: string; fileIds?: string[] }) {
     const o = await this.load(id);
-    const content = (text ?? '').trim();
-    if (!content) throw new BadRequestException('Escreva o comentário.');
+    const content = (input.text ?? '').trim();
+    const fileIds = [...new Set(input.fileIds ?? [])].slice(0, 8);
+    if (!content && !fileIds.length) throw new BadRequestException('Escreva o comentário ou anexe uma imagem.');
+    if (content.length > 4000) throw new BadRequestException('O comentário deve ter no máximo 4000 caracteres.');
+    const files = fileIds.length ? await this.prisma.serviceOrderFile.findMany({ where: { id: { in: fileIds }, orderId: id }, select: { id: true, fileName: true, mimeType: true, size: true } }) : [];
     const d = (o.detail ?? {}) as Detail;
-    d.eventos = [...(d.eventos ?? []), { tipo: 0, conteudo: content, dataRegistro: new Date().toISOString(), usuario: userName, registroId: null, anexos: [] }];
-    return this.full(await this.touch(id, {}, d, { user: userName, text: `Comentário adicionado por '${userName}'` }));
+    d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, anexos: files }];
+    const updated = await this.touch(id, {}, d, { user: user.name, text: `Comentário adicionado por '${user.name}'` });
+    // Administradores recebem como notificação não lida e vão direto para a OS.
+    const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN', id: { not: user.id } }, select: { id: true } });
+    if (admins.length) {
+      const number = String(Math.floor(o.number / 1000)).padStart(3, '0') + '.' + String(o.number % 1000).padStart(3, '0');
+      const snippet = content ? (content.length > 120 ? `${content.slice(0, 117)}...` : content) : `${files.length} imagem(ns)`;
+      await this.prisma.notification.createMany({
+        data: admins.map((a) => ({ userId: a.id, title: `Novo comentário na OS ${number}`, message: `${user.name}: ${snippet}`, data: { type: 'os-comment', serviceOrderId: id, url: `/operacional/ordens-servico?os=${id}` } })),
+      });
+    }
+    return this.out(updated);
+  }
+
+  /** Só os comentários (para acompanhar em tempo real sem recarregar a OS toda). */
+  async comments(id: string) {
+    const o = await this.load(id);
+    return (await this.out(o)).events;
   }
 
   private recalc(d: Detail) {
@@ -213,7 +263,7 @@ export class ServiceOrdersService {
     const base = { ordemServicoItemId: nextId, quantidade: quantity, cobrado: true, valores: { unitario: unit, total, desconto: { valor: discount } }, orcamento: null };
     if (isService) d.servicos = [...(d.servicos ?? []), { ...base, servico: { descricao: description } }];
     else d.produtos = [...(d.produtos ?? []), { ...base, quantidadeEntregue: 0, produto: { descricao: description, unidadeMedida: input.unit || 'UN' } }];
-    return this.full(await this.touch(id, this.recalc(d), d, { user: userName, text: `${isService ? 'Serviço' : 'Produto'} '${description}' adicionado por '${userName}'` }));
+    return this.out(await this.touch(id, this.recalc(d), d, { user: userName, text: `${isService ? 'Serviço' : 'Produto'} '${description}' adicionado por '${userName}'` }));
   }
 
   async removeItem(userName: string, id: string, itemId: number) {
@@ -226,7 +276,7 @@ export class ServiceOrdersService {
     if (item.orcamento) throw new BadRequestException('Itens vindos de um orçamento não podem ser removidos.');
     d.servicos = (d.servicos ?? []).filter((i) => i.ordemServicoItemId !== itemId);
     d.produtos = (d.produtos ?? []).filter((i) => i.ordemServicoItemId !== itemId);
-    return this.full(await this.touch(id, this.recalc(d), d, { user: userName, text: `Item '${item.servico?.descricao ?? item.produto?.descricao}' removido por '${userName}'` }));
+    return this.out(await this.touch(id, this.recalc(d), d, { user: userName, text: `Item '${item.servico?.descricao ?? item.produto?.descricao}' removido por '${userName}'` }));
   }
 
   async deliver(userName: string, id: string, itemId: number, quantity?: number) {
@@ -238,7 +288,7 @@ export class ServiceOrdersService {
     const qty = quantity === undefined ? item.quantidade - (item.quantidadeEntregue ?? 0) : Number(quantity);
     if (!(qty > 0) || (item.quantidadeEntregue ?? 0) + qty > item.quantidade) throw new BadRequestException('Quantidade de entrega inválida.');
     item.quantidadeEntregue = (item.quantidadeEntregue ?? 0) + qty;
-    return this.full(await this.touch(id, {}, d, { user: userName, text: `${qty} un. de '${item.produto?.descricao}' entregue(s) por '${userName}'` }));
+    return this.out(await this.touch(id, {}, d, { user: userName, text: `${qty} un. de '${item.produto?.descricao}' entregue(s) por '${userName}'` }));
   }
 
   async close(userName: string, id: string, input: { cause?: string; solution?: string }) {
@@ -248,25 +298,25 @@ export class ServiceOrdersService {
     if (pending.length) throw new BadRequestException(pending.map((p) => p.mensagem).join(' '));
     const d = (o.detail ?? {}) as Detail;
     d.fechamento = { causa: input.cause ? { descricao: input.cause } : null, solucao: input.solution ? { descricao: input.solution } : null };
-    return this.full(await this.touch(id, { status: 4, closedAt: new Date(), causeName: input.cause || null, solutionName: input.solution || null }, d, { user: userName, text: `Ordem de Serviço fechada por '${userName}'` }));
+    return this.out(await this.touch(id, { status: 4, closedAt: new Date(), causeName: input.cause || null, solutionName: input.solution || null }, d, { user: userName, text: `Ordem de Serviço fechada por '${userName}'` }));
   }
 
   async cancel(userName: string, id: string) {
     const o = await this.load(id);
     if (![0, 1, 3, 7, 8].includes(o.status)) throw new BadRequestException('Esta OS não pode ser cancelada.');
-    return this.full(await this.touch(id, { status: 2, cancelledAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço cancelada por '${userName}'` }));
+    return this.out(await this.touch(id, { status: 2, cancelledAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço cancelada por '${userName}'` }));
   }
 
   async reopen(userName: string, id: string) {
     const o = await this.load(id);
     if (![2, 4, 3].includes(o.status)) throw new BadRequestException('Esta OS já está aberta ou foi faturada.');
-    return this.full(await this.touch(id, { status: 0, cancelledAt: null, closedAt: null, interruptedAt: null }, o.detail as Detail, { user: userName, text: `Ordem de Serviço reaberta por '${userName}'` }));
+    return this.out(await this.touch(id, { status: 0, cancelledAt: null, closedAt: null, interruptedAt: null }, o.detail as Detail, { user: userName, text: `Ordem de Serviço reaberta por '${userName}'` }));
   }
 
   async interrupt(userName: string, id: string) {
     const o = await this.load(id);
     if (!OPEN.includes(o.status)) throw new BadRequestException('Só é possível interromper uma OS aberta.');
-    return this.full(await this.touch(id, { status: 3, interruptedAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço interrompida por '${userName}'` }));
+    return this.out(await this.touch(id, { status: 3, interruptedAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço interrompida por '${userName}'` }));
   }
 
 
@@ -295,7 +345,7 @@ export class ServiceOrdersService {
         },
       });
     });
-    return this.full(created);
+    return this.out(created);
   }
 
   /** Gestão de OS: indicadores consolidados. */
