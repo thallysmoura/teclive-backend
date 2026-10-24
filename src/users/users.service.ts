@@ -42,7 +42,7 @@ export class UsersService {
   }
 
   permissionsCatalog() {
-    return this.prisma.sidebarItem.findMany({ where: { href: { not: null } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
+    return this.prisma.sidebarItem.findMany({ where: { href: { not: null }, key: { not: 'ajuda' } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
   }
 
   private async validatePermissions(permissions: string[]) {

@@ -16,7 +16,7 @@ export class NavigationService {
       return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item);
     }
     const visible = new Set(items.filter((item) => user.permissions.includes(item.key)).map((item) => item.parentKey).filter(Boolean));
-    return items.filter((item) => (['log_acesso', 'dados_empresa'].includes(item.key) && user.permissions.includes(item.key)) || (item.section === 'main' && (user.permissions.includes(item.key) || visible.has(item.key))))
+    return items.filter((item) => item.key === 'ajuda' || (['log_acesso', 'dados_empresa'].includes(item.key) && user.permissions.includes(item.key)) || (item.section === 'main' && (user.permissions.includes(item.key) || visible.has(item.key))))
       .map((item) => visible.has(item.key) && !user.permissions.includes(item.key) ? { ...item, href: null, embedUrl: null } : item);
   }
 
