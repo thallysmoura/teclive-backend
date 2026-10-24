@@ -11,7 +11,6 @@ async function main() {
     { key: 'administrativo', label: 'Governança', href: null, section: 'group' },
     { key: 'controle_acesso', label: 'Equipe e Permissões', href: '/access-control', section: 'admin' },
     { key: 'log_acesso', label: 'Log de acesso', href: '/access-logs', section: 'admin', sortOrder: 1 },
-    { key: 'dados_empresa', label: 'Dados da empresa', href: '/company', section: 'admin', sortOrder: 2 },
   ]) await prisma.sidebarItem.upsert({ where: { key: item.key }, update: {}, create: item });
 
   // Dados reais de "Locais de Estoque" puxados da conta Teclive no eugestor.app
