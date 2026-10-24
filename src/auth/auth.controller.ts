@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService, ACCESS_TOKEN_TTL_MS } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -8,6 +8,7 @@ import { UsersService } from '../users/users.service.js';
 import { detectDevice } from '../users/device.util.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { PresenceGateway } from '../presence/presence.gateway.js';
+import { MyProfileDto, ChangePasswordDto } from '../users/dto/my-profile.dto.js';
 import { AccessLogsService } from '../access-logs/access-logs.service.js';
 
 const ACCESS_COOKIE = 'eugestor_token';
@@ -112,6 +113,19 @@ export class AuthController {
       status: user.status,
       permissions: user.permissions,
       avatarUrl: user.avatarUrl,
+      phone: user.phone ?? '',
     };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateMe(@Req() req: Request, @Body() dto: MyProfileDto) {
+    return this.usersService.updateMyProfile((req.user as { id: string }).id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('me/password')
+  changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
+    return this.usersService.changePassword((req.user as { id: string }).id, dto.currentPassword, dto.newPassword);
   }
 }

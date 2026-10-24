@@ -127,6 +127,20 @@ export class UsersService {
     }
   }
 
+  async updateMyProfile(id: string, data: { name: string; phone?: string }) {
+    const user = await this.prisma.user.update({ where: { id }, data: { name: data.name, phone: data.phone || null }, select: { ...SELECT_SAFE, phone: true } });
+    return user;
+  }
+
+  async changePassword(id: string, currentPassword: string, newPassword: string) {
+    const user = await this.findById(id);
+    if (!user) throw new NotFoundException('Usuário não encontrado.');
+    if (!(await bcrypt.compare(currentPassword, user.passwordHash))) throw new BadRequestException('A senha atual está incorreta.');
+    if (currentPassword === newPassword) throw new BadRequestException('A nova senha deve ser diferente da atual.');
+    await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(newPassword, 10) } });
+    return { ok: true };
+  }
+
   async updateRole(id: string, role: Role) {
     const user = await this.prisma.user.update({
       where: { id },

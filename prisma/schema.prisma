@@ -26,6 +26,7 @@ model User {
   status        UserStatus     @default(ACTIVE)
   permissions   String[]       @default([])
   avatarUrl     String?
+  phone         String?        @db.VarChar(20)
   lastLoginAt   DateTime?
   lastSeenAt    DateTime?
   lastDevice    String?
