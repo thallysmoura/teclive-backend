@@ -1,132 +1,561 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# EuGestor API (Teclive)
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API em **NestJS** (ESM) + **Prisma** + **PostgreSQL** do clone local do EuGestor.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Como rodar
 
 ```bash
-$ npm install
+npm install
+cp .env.example .env        # preencha DATABASE_URL, JWT_SECRET etc.
+npx prisma migrate deploy   # aplica as migrações
+npx prisma db seed          # itens de menu e usuário inicial
+npm run start:dev           # http://localhost:4301
 ```
 
-## Compile and run the project
+## Variáveis de ambiente (nomes)
 
-```bash
-# development
-$ npm run start
+| Variável | Para quê |
+| --- | --- |
+| `DATABASE_URL` | conexão do PostgreSQL |
+| `JWT_SECRET` | assinatura dos tokens de sessão |
+| `PORT`, `WEB_ORIGIN` | porta da API e origem permitida (CORS) |
+| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_PUBLIC_URL`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Cloudflare R2 (fotos de perfil e capturas das sugestões; o banco guarda só a URL) |
+| `OPENAI_API_KEY`, `OPENAI_MODEL` | integração com a OpenAI (`AiService` / `POST /ai/chat`) |
 
-# watch mode
-$ npm run start:dev
+Segredos ficam só no `.env` (fora do git).
 
-# production mode
-$ npm run start:prod
-```
+## Módulos principais
 
-## Run tests
+`auth` · `users` (permissões por item de menu) · `navigation` (menu dinâmico) · `cadastros` · `comercial` · `operacional` · `stock-locations` · `dashboard` · `settings` · `notifications` · `suggestions` (sugestões de melhoria) · `ai` (OpenAI) · `storage` (Cloudflare R2) · `presence` · `access-logs`.
 
-```bash
-# unit tests
-$ npm run test
+## Estrutura do banco (PostgreSQL)
 
-# e2e tests
-$ npm run test:e2e
+Gerada do banco real em 25/10/2026. A fonte da verdade são as migrações em `prisma/migrations` e o `prisma/schema.prisma`. **Dados de clientes não ficam no repositório.**
 
-# test coverage
-$ npm run test:cov
-```
 
-## Deployment
+33 tabelas.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### `access_logs`
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `userId` | text | sim |  | FK → users.id |
+| `userName` | varchar(100) | não |  |  |
+| `userEmail` | varchar(254) | não |  |  |
+| `device` | varchar(16) | não |  |  |
+| `userAgent` | varchar(512) | sim |  |  |
+| `ip` | varchar(64) | sim |  |  |
+| `locationStatus` | varchar(20) | não | `'not_requested'::character varying` |  |
+| `latitude` | float8 | sim |  |  |
+| `longitude` | float8 | sim |  |  |
+| `accuracy` | float8 | sim |  |  |
+| `city` | varchar(160) | sim |  |  |
+| `region` | varchar(160) | sim |  |  |
+| `country` | varchar(2) | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `avatarUrl` | text | sim |  |  |
+| `status` | varchar(16) | não | `'VALID'::character varying` |  |
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+### `app_settings`
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `key` | varchar(80) | não |  | PK |
+| `value` | jsonb | não |  |  |
+| `updatedBy` | varchar(200) | sim |  |  |
+| `updatedAt` | timestamp | não |  |  |
 
-## Observability
+### `calendar_events`
 
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `title` | varchar(200) | não |  |  |
+| `startsAt` | timestamp | não |  |  |
+| `endsAt` | timestamp | não |  |  |
+| `allDay` | boolean | não | `false` |  |
+| `description` | text | sim |  |  |
+| `ownerName` | varchar(200) | não |  |  |
+| `ownerId` | text | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
+### `catalog_items`
 
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `kind` | varchar(30) | não |  |  |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
+### `company_profile`
 
-```bash
-$ npx @nestjs/observe link
-```
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não | `'main'::text` | PK |
+| `cnpj` | varchar(14) | não |  |  |
+| `legalName` | varchar(160) | não |  |  |
+| `tradeName` | varchar(160) | não | `''::character varying` |  |
+| `email` | varchar(254) | não | `''::character varying` |  |
+| `phone` | varchar(20) | não | `''::character varying` |  |
+| `postalCode` | varchar(8) | não |  |  |
+| `street` | varchar(160) | não |  |  |
+| `number` | varchar(20) | não |  |  |
+| `district` | varchar(100) | não |  |  |
+| `complement` | varchar(160) | não | `''::character varying` |  |
+| `city` | varchar(100) | não |  |  |
+| `state` | varchar(2) | não |  |  |
+| `municipalRegistration` | varchar(40) | não | `''::character varying` |  |
+| `stateRegistration` | varchar(40) | não | `''::character varying` |  |
+| `substituteRegistration` | varchar(40) | não | `''::character varying` |  |
+| `taxRegime` | varchar(24) | não |  |  |
+| `cnae` | varchar(7) | não | `''::character varying` |  |
+| `accountantEnabled` | boolean | não | `false` |  |
+| `accountantName` | varchar(100) | não | `''::character varying` |  |
+| `accountantEmail` | varchar(254) | não | `''::character varying` |  |
+| `accountantPhone` | varchar(20) | não | `''::character varying` |  |
+| `accountantCrc` | varchar(40) | não | `''::character varying` |  |
+| `logoDataUrl` | text | sim |  |  |
+| `boletoLogoDataUrl` | text | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `updatedAt` | timestamp | não |  |  |
 
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
+### `notifications`
 
-Or do it by hand:
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `userId` | text | não |  | FK → users.id |
+| `title` | varchar(160) | não |  |  |
+| `message` | text | não |  |  |
+| `data` | jsonb | sim |  |  |
+| `readAt` | timestamp | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-```bash
-$ npm install @nestjs/observe
-```
+### `op_causes`
 
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
+### `op_defects`
 
-## Resources
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `serviceMinutes` | integer | não | `0` |  |
+| `closingMinutes` | integer | não | `0` |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-Check out a few resources that may come in handy when working with NestJS:
+### `op_questionnaires`
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `title` | varchar(200) | não |  |  |
+| `description` | varchar(500) | sim |  |  |
+| `questionCount` | integer | não | `0` |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-## Support
+### `op_solutions`
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
 
-## Stay in touch
+### `people`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `type` | varchar(1) | não | `'F'::character varying` |  |
+| `document` | varchar(20) | sim |  |  |
+| `name` | varchar(200) | não |  |  |
+| `nickname` | varchar(200) | sim |  |  |
+| `rg` | varchar(30) | sim |  |  |
+| `identifier` | varchar(60) | sim |  |  |
+| `isClient` | boolean | não | `true` |  |
+| `isSupplier` | boolean | não | `false` |  |
+| `isEmployee` | boolean | não | `false` |  |
+| `isTechnician` | boolean | não | `false` |  |
+| `isCarrier` | boolean | não | `false` |  |
+| `isSeller` | boolean | não | `false` |  |
+| `taxpayerType` | integer | sim |  |  |
+| `isFinalConsumer` | boolean | não | `false` |  |
+| `municipalRegistration` | varchar(40) | sim |  |  |
+| `stateRegistration` | varchar(40) | sim |  |  |
+| `email` | varchar(200) | sim |  |  |
+| `phone` | varchar(40) | sim |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `becameClientAt` | timestamp | sim |  |  |
+| `isLead` | boolean | não | `false` |  |
+| `sellerName` | varchar(200) | sim |  |  |
 
-## License
+### `quote_attachments`
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `quoteId` | text | não |  | FK → quotes.id |
+| `fileName` | varchar(200) | não |  |  |
+| `caption` | varchar(200) | sim |  |  |
+| `mimeType` | varchar(120) | não |  |  |
+| `size` | integer | não |  |  |
+| `fileData` | bytea | não |  |  |
+| `userName` | varchar(200) | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `quote_history`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `quoteId` | text | não |  | FK → quotes.id |
+| `userName` | varchar(200) | não |  |  |
+| `description` | varchar(500) | não |  |  |
+| `at` | timestamp | não |  |  |
+
+### `quote_items`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `quoteId` | text | não |  | FK → quotes.id |
+| `kind` | varchar(12) | não |  |  |
+| `description` | varchar(300) | não |  |  |
+| `identifier` | varchar(60) | sim |  |  |
+| `unit` | varchar(20) | sim |  |  |
+| `quantity` | numeric | não |  |  |
+| `unitValue` | numeric | não |  |  |
+| `discountValue` | numeric | não | `0` |  |
+| `discountPercent` | numeric | não | `0` |  |
+| `total` | numeric | não |  |  |
+| `cost` | numeric | não | `0` |  |
+| `rental` | boolean | não | `false` |  |
+| `sortOrder` | integer | não | `0` |  |
+
+### `quote_models`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `quote_payments`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `quoteId` | text | não |  | FK → quotes.id |
+| `method` | varchar(120) | não |  |  |
+| `installments` | integer | não | `1` |  |
+| `total` | numeric | não |  |  |
+| `selected` | boolean | não | `false` |  |
+
+### `quote_templates`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `description` | varchar(200) | não |  |  |
+| `fileName` | varchar(200) | não |  |  |
+| `fileData` | bytea | não |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `quotes`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `number` | integer | não |  |  |
+| `title` | varchar(200) | sim |  |  |
+| `personId` | text | sim |  | FK → people.id |
+| `personName` | varchar(200) | não |  |  |
+| `personNickname` | varchar(200) | sim |  |  |
+| `personDocument` | varchar(20) | sim |  |  |
+| `personType` | varchar(1) | não | `'F'::character varying` |  |
+| `personIsLead` | boolean | não | `false` |  |
+| `sellerName` | varchar(200) | sim |  |  |
+| `status` | integer | não | `3` |  |
+| `purpose` | integer | não | `1` |  |
+| `modality` | integer | não | `2` |  |
+| `openedAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `validUntil` | timestamp | não |  |  |
+| `wonAt` | timestamp | sim |  |  |
+| `releasedAt` | timestamp | sim |  |  |
+| `cancelledAt` | timestamp | sim |  |  |
+| `refusalReason` | varchar(200) | sim |  |  |
+| `technicalSheet` | text | sim |  |  |
+| `notes` | text | sim |  |  |
+| `showNotes` | boolean | não | `false` |  |
+| `contactName` | varchar(200) | sim |  |  |
+| `contactEmail` | varchar(200) | sim |  |  |
+| `contactPhone` | varchar(40) | sim |  |  |
+| `address` | jsonb | sim |  |  |
+| `openedBy` | varchar(200) | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `refresh_tokens`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `userId` | text | não |  | FK → users.id |
+| `tokenHash` | text | não |  |  |
+| `remember` | boolean | não | `false` |  |
+| `expiresAt` | timestamp | não |  |  |
+| `revokedAt` | timestamp | sim |  |  |
+| `replacedBy` | text | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `refusal_reasons`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `description` | varchar(200) | não |  |  |
+| `usedWhen` | varchar(12) | não | `'CLIENT'::character varying` |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `sales_actions`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `personId` | text | sim |  | FK → people.id |
+| `personName` | varchar(200) | não |  |  |
+| `title` | varchar(200) | não |  |  |
+| `actionDate` | timestamp | não |  |  |
+| `durationHours` | numeric | não | `0` |  |
+| `channel` | varchar(60) | não |  |  |
+| `supportTeam` | varchar(120) | sim |  |  |
+| `description` | text | sim |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdBy` | varchar(200) | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `service_items`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `category` | varchar(200) | sim |  |  |
+| `modality` | integer | não | `1` |  |
+| `serviceType` | integer | não | `3` |  |
+| `allowsRental` | boolean | não | `false` |  |
+| `blocksOnDelinquency` | boolean | não | `false` |  |
+| `cost` | numeric | não | `0` |  |
+| `margin` | numeric | não | `50` |  |
+| `price` | numeric | não | `0` |  |
+| `isActive` | boolean | não | `true` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `service_order_files`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `orderId` | text | não |  |  |
+| `fileName` | varchar(200) | não |  |  |
+| `mimeType` | varchar(120) | não |  |  |
+| `size` | integer | não |  |  |
+| `fileData` | bytea | não |  |  |
+| `userId` | text | sim |  |  |
+| `userName` | varchar(200) | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `service_orders`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `number` | integer | não |  |  |
+| `type` | integer | não | `1` |  |
+| `purpose` | integer | não | `0` |  |
+| `status` | integer | não | `0` |  |
+| `defectName` | varchar(200) | sim |  |  |
+| `personId` | text | sim |  |  |
+| `personName` | varchar(200) | não |  |  |
+| `personNickname` | varchar(200) | sim |  |  |
+| `personType` | varchar(1) | não | `'F'::character varying` |  |
+| `address` | jsonb | sim |  |  |
+| `contact` | jsonb | sim |  |  |
+| `openedBy` | varchar(200) | não | `'—'::character varying` |  |
+| `openedAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `closedAt` | timestamp | sim |  |  |
+| `cancelledAt` | timestamp | sim |  |  |
+| `interruptedAt` | timestamp | sim |  |  |
+| `scheduleStart` | timestamp | sim |  |  |
+| `scheduleEnd` | timestamp | sim |  |  |
+| `technicians` | ARRAY | sim | `ARRAY[]::text[]` |  |
+| `sellers` | ARRAY | sim | `ARRAY[]::text[]` |  |
+| `quoteNumbers` | ARRAY | sim | `ARRAY[]::integer[]` |  |
+| `technicalSheet` | text | sim |  |  |
+| `totalServices` | numeric | não | `0` |  |
+| `totalProducts` | numeric | não | `0` |  |
+| `causeName` | varchar(200) | sim |  |  |
+| `solutionName` | varchar(200) | sim |  |  |
+| `paymentMethod` | varchar(100) | sim |  |  |
+| `installments` | integer | sim |  |  |
+| `detail` | jsonb | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `updatedAt` | timestamp | não |  |  |
+
+### `sidebar_items`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `key` | text | não |  | PK |
+| `label` | varchar(80) | não |  |  |
+| `href` | text | sim |  |  |
+| `section` | varchar(16) | não | `'main'::character varying` |  |
+| `sortOrder` | integer | não | `0` |  |
+| `embedUrl` | text | sim |  |  |
+| `parentKey` | text | sim |  | FK → sidebar_items.key |
+| `createdById` | text | sim |  | FK → users.id |
+
+### `stock_balances`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `locationId` | text | não |  | FK → stock_locations.id |
+| `balanceDate` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `userName` | varchar(160) | não |  |  |
+| `status` | varchar(20) | não | `'OPEN'::character varying` |  |
+| `filterType` | varchar(20) | não | `'PRODUCTS'::character varying` |  |
+| `filterIds` | ARRAY | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `stock_locations`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(160) | não |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `isPrincipal` | boolean | não | `false` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `updatedAt` | timestamp | não |  |  |
+
+### `stock_movement_items`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `movementId` | text | não |  | FK → stock_movements.id |
+| `productId` | text | sim |  | FK → stock_products.id |
+| `description` | varchar(300) | não |  |  |
+| `type` | varchar(10) | não |  |  |
+| `quantity` | numeric | não |  |  |
+| `unit` | varchar(20) | não |  |  |
+| `cost` | numeric | não |  |  |
+| `locationName` | varchar(200) | não |  |  |
+
+### `stock_movements`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `legacyId` | integer | sim |  |  |
+| `description` | varchar(200) | não |  |  |
+| `movementDate` | timestamp | não |  |  |
+| `cancellationDate` | timestamp | sim |  |  |
+| `userName` | varchar(160) | não |  |  |
+| `operation` | integer | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `stock_product_balances`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `productId` | text | não |  | FK → stock_products.id |
+| `locationId` | text | não |  | FK → stock_locations.id |
+| `quantity` | numeric | não |  |  |
+
+### `stock_products`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `description` | varchar(300) | não |  |  |
+| `brand` | varchar(120) | não | `'Geral'::character varying` |  |
+| `productGroup` | varchar(120) | não | `'Geral'::character varying` |  |
+| `unit` | varchar(20) | não |  |  |
+| `unitName` | varchar(60) | sim |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `costPrice` | numeric | sim |  |  |
+| `isActive` | boolean | não | `true` |  |
+| `legacyId` | integer | sim |  |  |
+| `model` | varchar(200) | sim |  |  |
+| `salePrice` | numeric | sim |  |  |
+| `alternativeDescription` | varchar(300) | sim |  |  |
+| `allowNegativeStock` | boolean | não | `false` |  |
+| `allowRental` | boolean | não | `false` |  |
+| `barcode` | varchar(60) | sim |  |  |
+| `identifier` | varchar(60) | sim |  |  |
+| `margin` | numeric | sim |  |  |
+| `supplierCode` | varchar(60) | sim |  |  |
+
+### `suggestions`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `userId` | text | não |  | FK → users.id |
+| `screenPath` | varchar(300) | não |  |  |
+| `screenTitle` | varchar(200) | não |  |  |
+| `category` | varchar(40) | não |  |  |
+| `title` | varchar(160) | não |  |  |
+| `description` | text | não |  |  |
+| `imageUrl` | varchar(500) | sim |  |  |
+| `viewport` | varchar(40) | sim |  |  |
+| `userAgent` | varchar(300) | sim |  |  |
+| `status` | varchar(20) | não | `'NOVA'::character varying` |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+
+### `users`
+
+| Coluna | Tipo | Nulo | Padrão | Chave |
+| --- | --- | --- | --- | --- |
+| `id` | text | não |  | PK |
+| `email` | text | não |  |  |
+| `passwordHash` | text | não |  |  |
+| `name` | text | não |  |  |
+| `createdAt` | timestamp | não | `CURRENT_TIMESTAMP` |  |
+| `permissions` | ARRAY | sim | `ARRAY[]::text[]` |  |
+| `role` | Role | não | `'USER'::"Role"` |  |
+| `status` | UserStatus | não | `'ACTIVE'::"UserStatus"` |  |
+| `avatarUrl` | text | sim |  |  |
+| `lastDevice` | text | sim |  |  |
+| `lastLoginAt` | timestamp | sim |  |  |
+| `lastSeenAt` | timestamp | sim |  |  |
+| `phone` | varchar(20) | sim |  |  |
