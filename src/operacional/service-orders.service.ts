@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { R2Service } from '../storage/r2.service.js';
 import { Prisma, type ServiceOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 
@@ -27,7 +28,7 @@ const asNumber = (v: unknown) => Number(v ?? 0);
 
 @Injectable()
 export class ServiceOrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly storage: R2Service) {}
 
   /** Aberta + prazo vencido = "Em atraso" (o eugestor calcula isso na hora). */
   private effective(o: Pick<ServiceOrder, 'status' | 'scheduleEnd'>) {
@@ -202,14 +203,29 @@ export class ServiceOrdersService {
     const data = Buffer.from(input.fileBase64 ?? '', 'base64');
     if (!data.length) throw new BadRequestException('Arquivo vazio.');
     if (data.length > 3 * 1024 * 1024) throw new BadRequestException('A imagem deve ter no máximo 3 MB (ela é reduzida automaticamente antes do envio).');
-    const file = await this.prisma.serviceOrderFile.create({ data: { orderId: id, fileName: (input.fileName ?? 'imagem').slice(0, 200), mimeType: mime, size: data.length, fileData: data, userId: user.id, userName: user.name } });
-    return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size };
+    // Confere o conteúdo de verdade (não confia só no tipo informado) e guarda no Cloudflare R2; o banco fica só com o endereço.
+    const isJpeg = data[0] === 0xff && data[1] === 0xd8;
+    const isPng = data.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const isWebp = data.subarray(0, 4).toString('ascii') === 'RIFF' && data.subarray(8, 12).toString('ascii') === 'WEBP';
+    const isGif = data.subarray(0, 3).toString('ascii') === 'GIF';
+    if (!(isJpeg || isPng || isWebp || isGif)) throw new BadRequestException('O arquivo não é uma imagem válida.');
+    const ext = isJpeg ? 'jpg' : isPng ? 'png' : isWebp ? 'webp' : 'gif';
+    const key = `os-files/${createHash('sha256').update(data).digest('hex')}.${ext}`;
+    await this.storage.put(key, data, mime);
+    const url = this.storage.publicUrl(key);
+    const file = await this.prisma.serviceOrderFile.create({ data: { orderId: id, fileName: (input.fileName ?? 'imagem').slice(0, 200), mimeType: mime, size: data.length, fileUrl: url, userId: user.id, userName: user.name } });
+    return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size, url };
   }
 
   async file(id: string, fileId: string) {
     const f = await this.prisma.serviceOrderFile.findFirst({ where: { id: fileId, orderId: id } });
     if (!f) throw new NotFoundException('Arquivo não encontrado.');
-    return { fileName: f.fileName, mimeType: f.mimeType, data: Buffer.from(f.fileData) };
+    if (f.fileUrl) { // arquivo novo: vem do R2
+      const res = await fetch(f.fileUrl).catch(() => null);
+      if (!res?.ok) throw new NotFoundException('Arquivo não encontrado.');
+      return { fileName: f.fileName, mimeType: f.mimeType, data: Buffer.from(await res.arrayBuffer()) };
+    }
+    return { fileName: f.fileName, mimeType: f.mimeType, data: Buffer.from(f.fileData ?? []) };
   }
 
   async comment(user: { id: string; name: string }, id: string, input: { text?: string; fileIds?: string[] }) {
@@ -218,9 +234,9 @@ export class ServiceOrdersService {
     const fileIds = [...new Set(input.fileIds ?? [])].slice(0, 8);
     if (!content && !fileIds.length) throw new BadRequestException('Escreva o comentário ou anexe uma imagem.');
     if (content.length > 4000) throw new BadRequestException('O comentário deve ter no máximo 4000 caracteres.');
-    const files = fileIds.length ? await this.prisma.serviceOrderFile.findMany({ where: { id: { in: fileIds }, orderId: id }, select: { id: true, fileName: true, mimeType: true, size: true } }) : [];
+    const files = fileIds.length ? await this.prisma.serviceOrderFile.findMany({ where: { id: { in: fileIds }, orderId: id }, select: { id: true, fileName: true, mimeType: true, size: true, fileUrl: true } }) : [];
     const d = (o.detail ?? {}) as Detail;
-    d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, anexos: files }];
+    d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, anexos: files.map(({ fileUrl, ...f }) => ({ ...f, url: fileUrl ?? undefined })) }];
     const updated = await this.touch(id, {}, d, { user: user.name, text: `Comentário adicionado por '${user.name}'` });
     // Administradores recebem como notificação não lida e vão direto para a OS.
     const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN', id: { not: user.id } }, select: { id: true } });
@@ -262,7 +278,15 @@ export class ServiceOrdersService {
     this.canEdit(user, event);
     const fileIds = ((event.anexos ?? []) as { id: string }[]).map((a) => a.id);
     d.eventos = (d.eventos ?? []).filter((e) => e.id !== eventId);
-    if (fileIds.length) await this.prisma.serviceOrderFile.deleteMany({ where: { id: { in: fileIds }, orderId: id } });
+    if (fileIds.length) {
+      const rows = await this.prisma.serviceOrderFile.findMany({ where: { id: { in: fileIds }, orderId: id }, select: { fileUrl: true } });
+      await this.prisma.serviceOrderFile.deleteMany({ where: { id: { in: fileIds }, orderId: id } });
+      // Apaga do R2 só quando nenhum outro registro usa o mesmo arquivo (o nome é o hash do conteúdo).
+      for (const url of new Set(rows.map((r) => r.fileUrl).filter((u): u is string => !!u))) {
+        const key = this.storage.keyFromUrl(url);
+        if (key && (await this.prisma.serviceOrderFile.count({ where: { fileUrl: url } })) === 0) await this.storage.delete(key).catch(() => undefined);
+      }
+    }
     return this.out(await this.touch(id, {}, d, { user: user.name, text: `Comentário excluído por '${user.name}'` }));
   }
 

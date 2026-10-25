@@ -231,7 +231,7 @@ model StockProduct {
   @@map("stock_products")
 }
 
-/// Marcas, grupos de produtos e ramos de atividade (mesma forma: descrição + ativo).
+/// Marcas, grupos de produtos e ramos de atividade (mesma forma: descriÃ§Ã£o + ativo).
 model CatalogItem {
   id          String   @id @default(uuid())
   kind        String   @db.VarChar(30)
@@ -526,7 +526,7 @@ model ServiceOrder {
   personType     String    @default("F") @db.VarChar(1)
   address        Json?
   contact        Json?
-  openedBy       String    @default("—") @db.VarChar(200)
+  openedBy       String    @default("â€”") @db.VarChar(200)
   openedAt       DateTime  @default(now())
   closedAt       DateTime?
   cancelledAt    DateTime?
@@ -558,7 +558,8 @@ model ServiceOrderFile {
   fileName  String   @db.VarChar(200)
   mimeType  String   @db.VarChar(120)
   size      Int
-  fileData  Bytes
+  fileData  Bytes?
+  fileUrl   String?  @db.VarChar(500)
   userId    String?
   userName  String   @db.VarChar(200)
   createdAt DateTime @default(now())
@@ -576,7 +577,7 @@ model AppSetting {
   @@map("app_settings")
 }
 
-/// Sugestões de melhoria enviadas pelas telas (com captura anotada guardada no R2; aqui fica só o endereço).
+/// SugestÃµes de melhoria enviadas pelas telas (com captura anotada guardada no R2; aqui fica sÃ³ o endereÃ§o).
 model Suggestion {
   id          String   @id @default(uuid())
   userId      String
@@ -597,7 +598,7 @@ model Suggestion {
   @@map("suggestions")
 }
 
-/// Uso da IA (OpenAI): cada chamada com tokens e custo estimado em dólares.
+/// Uso da IA (OpenAI): cada chamada com tokens e custo estimado em dÃ³lares.
 model AiUsage {
   id               String   @id @default(uuid())
   userId           String?
