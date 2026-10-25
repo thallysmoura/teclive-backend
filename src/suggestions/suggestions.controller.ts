@@ -95,13 +95,13 @@ export class SuggestionsController {
     await this.prisma.suggestion.update({ where: { id }, data: { status: body.status } });
 
     // Avisa todos os administradores (e quem enviou, se não for admin) sobre a mudança de situação.
-    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } });
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true, avatarUrl: true } });
     const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
     const label = STATUS_LABEL[body.status];
     const title = body.status === 'CONCLUIDA' ? 'Sugestão resolvida' : 'Sugestão atualizada';
     const at = new Date().toISOString();
-    const rows = admins.map((a) => ({ userId: a.id, title, message: `${actor?.name ?? 'Um administrador'} marcou a sugestão "${current.title}" (de ${current.user.name}) como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '/sugestoes' } }));
-    if (!admins.some((a) => a.id === current.userId)) rows.push({ userId: current.userId, title, message: `Sua sugestão "${current.title}" agora está como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '' } });
+    const rows = admins.map((a) => ({ userId: a.id, title, message: `${actor?.name ?? 'Um administrador'} marcou a sugestão "${current.title}" (de ${current.user.name}) como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '/sugestoes', name: actor?.name, avatarUrl: actor?.avatarUrl ?? null } }));
+    if (!admins.some((a) => a.id === current.userId)) rows.push({ userId: current.userId, title, message: `Sua sugestão "${current.title}" agora está como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '', name: actor?.name, avatarUrl: actor?.avatarUrl ?? null } });
     await this.prisma.notification.createMany({ data: rows });
     return { ok: true };
   }
