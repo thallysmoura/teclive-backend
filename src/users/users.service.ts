@@ -29,6 +29,9 @@ function generatePassword() {
   return randomBytes(9).toString('base64url');
 }
 
+/** Telas só para administradores: não entram no catálogo de permissões nem podem ser concedidas. */
+const ADMIN_ONLY_HREF = '/gestao-obras';
+
 @Injectable()
 export class UsersService {
   constructor(private readonly prisma: PrismaService, private readonly presence: PresenceService) {}
@@ -83,13 +86,13 @@ export class UsersService {
   }
 
   permissionsCatalog() {
-    return this.prisma.sidebarItem.findMany({ where: { href: { not: null }, key: { not: 'ajuda' } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
+    return this.prisma.sidebarItem.findMany({ where: { AND: [{ href: { not: null } }, { href: { not: ADMIN_ONLY_HREF } }], key: { not: 'ajuda' } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
   }
 
   private async validatePermissions(permissions: string[]) {
     const extra = permissions.filter((key) => !PERMISSIONS.some((permission) => permission.key === key));
     if (!extra.length) return;
-    const known = await this.prisma.sidebarItem.findMany({ where: { key: { in: extra }, href: { not: null } }, select: { key: true } });
+    const known = await this.prisma.sidebarItem.findMany({ where: { key: { in: extra }, AND: [{ href: { not: null } }, { href: { not: ADMIN_ONLY_HREF } }] }, select: { key: true } });
     if (extra.some((key) => !known.some((item) => item.key === key))) throw new BadRequestException('Há permissões inválidas na seleção.');
   }
 
