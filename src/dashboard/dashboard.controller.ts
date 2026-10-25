@@ -13,13 +13,13 @@ export class DashboardController {
   @Get('overview')
   overview(@Req() req: Request) { return this.service.overview((req.user as { id: string }).id); }
 
-  /** Resumo executivo com IA (administradores; no máximo 5 por minuto). */
+  /** Resumo executivo com IA (administradores; no máximo 10 por minuto). */
   @Post('ai-summary')
   aiSummary(@Req() req: Request) {
     const id = (req.user as { id: string }).id;
     const now = Date.now();
     const recent = (aiHits.get(id) ?? []).filter((t) => now - t < 60_000);
-    if (recent.length >= 5) throw new HttpException('Muitas solicitações de resumo. Aguarde um minuto.', 429);
+    if (recent.length >= 10) throw new HttpException('Muitas solicitações de resumo. Aguarde um minuto.', 429);
     aiHits.set(id, [...recent, now]);
     return this.service.aiSummary(id);
   }

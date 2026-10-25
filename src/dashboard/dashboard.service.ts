@@ -1,4 +1,5 @@
 import { BadGatewayException, ForbiddenException, Injectable } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { AiService } from '../ai/ai.service.js';
 import { QuotesService } from '../comercial/quotes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -13,6 +14,7 @@ const KEYS = {
   cadastros: 'item_fbfee48c-aa73-4e12-ba11-17c0f42ec0ae',
 } as const;
 
+const AI_CACHE = new Map<string, { at: number; value: unknown }>();
 const n = (v: unknown) => Number(v ?? 0);
 const round = (v: number) => Math.round(v * 100) / 100;
 
@@ -24,13 +26,19 @@ export class DashboardService {
   async aiSummary(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
     if (user?.role !== 'ADMIN') throw new ForbiddenException('Apenas administradores usam o resumo com IA.');
-    const data = await this.overview(userId);
-    const facts = JSON.stringify(data).slice(0, 14000);
+    const data = (await this.overview(userId)) as Record<string, unknown>;
+    delete data.generatedAt; delete data.access; // não ajudam a IA e mudariam o cache a cada chamada
+    const facts = JSON.stringify(data, (_k, v) => (v === null || v === 0 || v === '' ? undefined : v)).slice(0, 7000); // compacto: menos tokens
+    // Mesmos números nos últimos 30 min = mesma resposta, sem gastar de novo.
+    const key = createHash('sha256').update(facts).digest('hex');
+    const hit = AI_CACHE.get(key);
+    if (hit && Date.now() - hit.at < 30 * 60_000) return hit.value;
     const system = [
       'Você é um consultor executivo sênior (COO) da Teclive, empresa brasileira de serviços e obras de tecnologia.',
       'Receberá os números do painel executivo da empresa e deve orientar o diretor. Responda SEMPRE em português do Brasil, em tom direto e profissional.',
       'A empresa JÁ usa este próprio sistema de gestão, que está em evolução. NUNCA sugira implantar, criar, contratar ou melhorar sistemas, softwares, ferramentas, dashboards, automações ou "monitoramento"; foque apenas em decisões de gestão: pessoas, priorização, prazos, cobrança, relacionamento com clientes, comercial, compras/estoque e rotina do time.',
       'Use somente os dados fornecidos. Nunca invente números; quando citar valores, use o formato R$ 1.234,56 ou "R$ 20,5 mil".',
+      'Seja conciso: frases curtas, sem repetir números já citados. Máximo de 4 indicadores, 4 itens de atenção, 3 do time e 2 estratégias com até 3 passos cada.',
       'Devolva APENAS um JSON com esta estrutura:',
       '{"panorama": string (3 a 5 frases sobre como a empresa está),',
       ' "indicadores": [{"rotulo": string, "valor": string, "leitura": string}] (3 a 5 itens com os números que mais importam),',
@@ -38,11 +46,11 @@ export class DashboardService {
       ' "time": [{"titulo": string, "detalhe": string}] (como agir com o time: cobranças, reconhecimentos, alinhamentos),',
       ' "estrategia": [{"titulo": string, "passos": string[], "impacto": string}] (ações estratégicas para sanar as dores, priorizadas)}',
     ].join('\n');
-    const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: `Dados do painel (JSON):\n${facts}` }], { json: true, temperature: 0.3, maxTokens: 1800 });
+    const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: `Dados do painel (JSON):\n${facts}` }], { json: true, temperature: 0.2, maxTokens: 1100, model: process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini' });
     try {
       const parsed = JSON.parse(result.text) as Record<string, unknown>;
       const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 8) : []);
-      return {
+      const value = {
         generatedAt: new Date().toISOString(),
         panorama: typeof parsed.panorama === 'string' ? parsed.panorama : '',
         indicadores: list(parsed.indicadores),
@@ -50,6 +58,8 @@ export class DashboardService {
         time: list(parsed.time),
         estrategia: list(parsed.estrategia),
       };
+      AI_CACHE.set(key, { at: Date.now(), value });
+      return value;
     } catch {
       throw new BadGatewayException('A IA devolveu uma resposta inválida. Tente novamente.');
     }
