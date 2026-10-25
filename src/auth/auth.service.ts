@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service.js';
@@ -32,6 +32,17 @@ export class AuthService {
     const passwordMatches = await bcrypt.compare(dto.password, user.passwordHash);
     if (!passwordMatches) {
       throw new UnauthorizedException('E-mail ou senha inválidos');
+    }
+
+    // Primeiro acesso (nunca entrou antes): com a senha certa, pede a nova senha (ou a confirmação de manter a atual).
+    const firstLogin = !user.lastLoginAt;
+    if (firstLogin && !dto.newPassword && !dto.keepCurrentPassword) {
+      throw new HttpException({ statusCode: 428, code: 'FIRST_LOGIN', message: 'Primeiro acesso: defina a sua nova senha.' }, 428);
+    }
+    if (dto.newPassword) {
+      if (!firstLogin) throw new BadRequestException('A senha só pode ser trocada neste passo no primeiro acesso. Use Meus Dados.');
+      if (dto.newPassword === dto.password) throw new BadRequestException('A nova senha deve ser diferente da senha atual.');
+      await this.usersService.setPassword(user.id, dto.newPassword);
     }
 
     const accessToken = await this.signAccessToken(user);

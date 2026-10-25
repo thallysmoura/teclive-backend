@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDefined, IsEmail, IsIn, IsNumber, IsObject, IsOptional, IsString, Max, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDefined, IsEmail, IsIn, IsNumber, IsObject, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 
 export class LoginLocationDto {
   @IsNumber() @Min(-90) @Max(90)
@@ -23,6 +23,18 @@ export class LoginDto {
   @IsOptional()
   @IsBoolean()
   keepConnected?: boolean;
+
+  /** Só vale no primeiro acesso: define a senha nova no mesmo passo do login. */
+  @IsOptional()
+  @IsString()
+  @MinLength(6, { message: 'A nova senha deve ter pelo menos 6 caracteres.' })
+  @MaxLength(72, { message: 'A nova senha deve ter no máximo 72 caracteres.' })
+  newPassword?: string;
+
+  /** Primeiro acesso: entrar mantendo a senha atual. */
+  @IsOptional()
+  @IsBoolean()
+  keepCurrentPassword?: boolean;
 
   @IsOptional()
   @IsIn(['not_requested', 'denied', 'unavailable', 'shared'])
