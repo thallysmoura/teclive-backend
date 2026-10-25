@@ -30,7 +30,7 @@ function generatePassword() {
 }
 
 /** Telas só para administradores: não entram no catálogo de permissões nem podem ser concedidas. */
-const ADMIN_ONLY_HREFS = ['/gestao-obras', '/sugestoes'];
+const ADMIN_ONLY_HREFS = ['/gestao-obras', '/sugestoes', '/custo-ia'];
 
 @Injectable()
 export class UsersService {

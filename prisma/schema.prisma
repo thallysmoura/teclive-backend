@@ -596,3 +596,18 @@ model Suggestion {
   @@index([userId])
   @@map("suggestions")
 }
+
+/// Uso da IA (OpenAI): cada chamada com tokens e custo estimado em dólares.
+model AiUsage {
+  id               String   @id @default(uuid())
+  userId           String?
+  feature          String   @db.VarChar(60)
+  model            String   @db.VarChar(60)
+  promptTokens     Int
+  completionTokens Int
+  costUsd          Decimal  @db.Decimal(12, 6)
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@map("ai_usage")
+}

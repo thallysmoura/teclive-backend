@@ -46,7 +46,7 @@ export class DashboardService {
       ' "time": [{"titulo": string, "detalhe": string}] (como agir com o time: cobranças, reconhecimentos, alinhamentos),',
       ' "estrategia": [{"titulo": string, "passos": string[], "impacto": string}] (ações estratégicas para sanar as dores, priorizadas)}',
     ].join('\n');
-    const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: `Dados do painel (JSON):\n${facts}` }], { json: true, temperature: 0.2, maxTokens: 1100, model: process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini' });
+    const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: `Dados do painel (JSON):\n${facts}` }], { json: true, temperature: 0.2, maxTokens: 1100, model: process.env.OPENAI_SUMMARY_MODEL || 'gpt-4o-mini', feature: 'resumo-executivo', userId });
     try {
       const parsed = JSON.parse(result.text) as Record<string, unknown>;
       const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 8) : []);
