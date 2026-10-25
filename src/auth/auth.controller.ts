@@ -1,3 +1,4 @@
+import { Throttle } from '@nestjs/throttler';
 import { BadRequestException, Body, Controller, Delete, Get, Patch, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService, ACCESS_TOKEN_TTL_MS } from './auth.service.js';
@@ -52,6 +53,7 @@ export class AuthController {
     });
   }
 
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
   @Post('login')
   async login(
     @Body() dto: LoginDto,
@@ -84,6 +86,7 @@ export class AuthController {
     return { user: result.user };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('check-email')
   async checkEmail(@Body() dto: CheckEmailDto) {
     const user = await this.usersService.findByEmail(dto.email);
@@ -128,6 +131,7 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('me/password')
   changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword((req.user as { id: string }).id, dto.currentPassword, dto.newPassword);
