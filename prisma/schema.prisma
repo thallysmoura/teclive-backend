@@ -37,6 +37,7 @@ model User {
   accessLogs AccessLog[]
 
   @@map("users")
+  suggestions   Suggestion[]
 }
 
 model RefreshToken {
@@ -573,4 +574,25 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 
   @@map("app_settings")
+}
+
+/// Sugestões de melhoria enviadas pelas telas (com captura anotada guardada no R2; aqui fica só o endereço).
+model Suggestion {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  screenPath  String   @db.VarChar(300)
+  screenTitle String   @db.VarChar(200)
+  category    String   @db.VarChar(40)
+  title       String   @db.VarChar(160)
+  description String   @db.Text
+  imageUrl    String?  @db.VarChar(500)
+  viewport    String?  @db.VarChar(40)
+  userAgent   String?  @db.VarChar(300)
+  status      String   @default("NOVA") @db.VarChar(20)
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("suggestions")
 }
