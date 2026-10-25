@@ -50,6 +50,43 @@ export class R2Service {
     if (!res.ok && !(method === 'DELETE' && res.status === 404)) throw new ServiceUnavailableException(`Falha ao falar com o armazenamento de imagens (${res.status}).`);
   }
 
+  /** Lista todos os objetos do bucket (paginado, 1000 por chamada): chave, tamanho e data de envio. */
+  async list(): Promise<{ key: string; size: number; modified: Date }[]> {
+    const c = this.config();
+    const host = `${c.account}.r2.cloudflarestorage.com`;
+    const out: { key: string; size: number; modified: Date }[] = [];
+    let token = '';
+    for (let page = 0; page < 50; page++) { // limite de segurança: 50 mil objetos
+      const params: [string, string][] = [['list-type', '2'], ['max-keys', '1000']];
+      if (token) params.push(['continuation-token', token]);
+      const query = params.sort((x, y) => (x[0] < y[0] ? -1 : 1)).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+      const path = `/${c.bucket}`;
+      const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+      const date = amzDate.slice(0, 8);
+      const payloadHash = sha256('');
+      const signed: Record<string, string> = { host, 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate };
+      const names = Object.keys(signed).sort();
+      const canonical = ['GET', path, query, ...names.map((n) => `${n}:${signed[n]}`), '', names.join(';'), payloadHash].join('\n');
+      const scope = `${date}/auto/s3/aws4_request`;
+      const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256(canonical)].join('\n');
+      const signingKey = hmac(hmac(hmac(hmac(`AWS4${c.secret}`, date), 'auto'), 's3'), 'aws4_request');
+      const signature = createHmac('sha256', signingKey).update(toSign).digest('hex');
+      const res = await fetch(`https://${host}${path}?${query}`, { headers: { 'x-amz-content-sha256': payloadHash, 'x-amz-date': amzDate, Authorization: `AWS4-HMAC-SHA256 Credential=${c.accessKey}/${scope}, SignedHeaders=${names.join(';')}, Signature=${signature}` } });
+      if (!res.ok) throw new ServiceUnavailableException(`Falha ao listar o armazenamento (${res.status}).`);
+      const xml = await res.text();
+      for (const m of xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)) {
+        const block = m[1];
+        const key = /<Key>([\s\S]*?)<\/Key>/.exec(block)?.[1] ?? '';
+        const size = Number(/<Size>(\d+)<\/Size>/.exec(block)?.[1] ?? 0);
+        const modified = new Date(/<LastModified>([^<]+)<\/LastModified>/.exec(block)?.[1] ?? Date.now());
+        out.push({ key: key.replace(/&amp;/g, '&'), size, modified });
+      }
+      token = /<NextContinuationToken>([^<]+)<\/NextContinuationToken>/.exec(xml)?.[1] ?? '';
+      if (!token || !/<IsTruncated>true<\/IsTruncated>/.test(xml)) break;
+    }
+    return out;
+  }
+
   put(key: string, body: Buffer, contentType: string) {
     return this.request('PUT', key, body, { 'content-type': contentType, 'cache-control': 'public, max-age=31536000, immutable' });
   }
