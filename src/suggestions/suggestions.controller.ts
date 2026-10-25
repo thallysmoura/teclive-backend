@@ -53,13 +53,11 @@ export class SuggestionsController {
     if (recent.length >= LIMIT_PER_MINUTE) throw new HttpException('Muitas sugestões em pouco tempo. Aguarde um minuto.', 429);
     hits.set(userId, [...recent, now]);
 
-    const category = clean(body.category, 40);
-    const title = clean(body.title, 160);
     const description = typeof body.description === 'string' ? body.description.trim().slice(0, 4000) : '';
+    const category = CATEGORIES.includes(clean(body.category, 40)) ? clean(body.category, 40) : 'Outro';
+    const title = clean(body.title, 160) || clean(description.split(/\n\nObservações/)[0], 80) || 'Sugestão de melhoria';
     const screenPath = clean(body.screenPath, 300);
     const imageUrl = clean(body.imageUrl, 500);
-    if (!CATEGORIES.includes(category)) throw new BadRequestException('Escolha o tipo de melhoria.');
-    if (title.length < 3) throw new BadRequestException('Informe qual é a melhoria.');
     if (description.length < 10) throw new BadRequestException('Descreva a melhoria com um pouco mais de detalhe.');
     if (!screenPath.startsWith('/')) throw new BadRequestException('Tela inválida.');
     if (imageUrl && !this.storage.keyFromUrl(imageUrl)) throw new BadRequestException('Imagem inválida.');
