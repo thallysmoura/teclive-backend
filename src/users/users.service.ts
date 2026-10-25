@@ -61,6 +61,15 @@ export class UsersService {
     return true;
   }
 
+  /** Troca o endereço da foto e apaga a anterior do R2 quando ninguém mais usa o mesmo arquivo. */
+  async replaceAvatar(id: string, url: string | null, storage: { keyFromUrl(u: string | null | undefined): string | null; delete(k: string): Promise<void> }) {
+    const previous = (await this.prisma.user.findUnique({ where: { id }, select: { avatarUrl: true } }))?.avatarUrl ?? null;
+    await this.prisma.user.update({ where: { id }, data: { avatarUrl: url } });
+    const key = previous && previous !== url ? storage.keyFromUrl(previous) : null;
+    if (key && (await this.prisma.user.count({ where: { avatarUrl: previous } })) === 0) await storage.delete(key).catch(() => undefined);
+    return url;
+  }
+
   async setPassword(id: string, password: string) {
     await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(password, 10) } });
   }

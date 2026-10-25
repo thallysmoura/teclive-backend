@@ -7,6 +7,7 @@ import { JwtStrategy } from './jwt.strategy.js';
 import { RefreshTokenService } from './refresh-token.service.js';
 import { UsersModule } from '../users/users.module.js';
 import { PresenceModule } from '../presence/presence.module.js';
+import { R2Service } from '../storage/r2.service.js';
 
 @Module({
   imports: [
@@ -19,6 +20,6 @@ import { PresenceModule } from '../presence/presence.module.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RefreshTokenService],
+  providers: [AuthService, JwtStrategy, RefreshTokenService, R2Service],
 })
 export class AuthModule {}

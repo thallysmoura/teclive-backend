@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Patch, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { AuthService, ACCESS_TOKEN_TTL_MS } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
@@ -10,6 +10,8 @@ import { RefreshTokenService } from './refresh-token.service.js';
 import { PresenceGateway } from '../presence/presence.gateway.js';
 import { MyProfileDto, ChangePasswordDto } from '../users/dto/my-profile.dto.js';
 import { AccessLogsService } from '../access-logs/access-logs.service.js';
+import { R2Service } from '../storage/r2.service.js';
+import { createHash } from 'node:crypto';
 
 const ACCESS_COOKIE = 'eugestor_token';
 const REFRESH_COOKIE = 'eugestor_refresh';
@@ -23,6 +25,7 @@ export class AuthController {
     private readonly refreshTokens: RefreshTokenService,
     private readonly presence: PresenceGateway,
     private readonly accessLogs: AccessLogsService,
+    private readonly storage: R2Service,
   ) {}
 
   private setAuthCookies(
@@ -128,5 +131,31 @@ export class AuthController {
   @Post('me/password')
   changePassword(@Req() req: Request, @Body() dto: ChangePasswordDto) {
     return this.usersService.changePassword((req.user as { id: string }).id, dto.currentPassword, dto.newPassword);
+  }
+
+  /** Foto de perfil: valida o arquivo, grava no R2 com nome = hash do conteúdo e guarda só o endereço no banco. */
+  @UseGuards(JwtAuthGuard)
+  @Post('me/avatar')
+  async uploadAvatar(@Req() req: Request) {
+    const body = req.body as unknown;
+    if (!Buffer.isBuffer(body) || body.length === 0) throw new BadRequestException('Envie uma imagem JPG, PNG ou WEBP.');
+    if (body.length > 500 * 1024) throw new BadRequestException('A imagem deve ter no máximo 500 KB.');
+    // Confere o conteúdo de verdade (não confia só no tipo informado).
+    const isJpeg = body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff;
+    const isPng = body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const isWebp = body.subarray(0, 4).toString('ascii') === 'RIFF' && body.subarray(8, 12).toString('ascii') === 'WEBP';
+    const kind = isJpeg ? { ext: 'jpg', type: 'image/jpeg' } : isPng ? { ext: 'png', type: 'image/png' } : isWebp ? { ext: 'webp', type: 'image/webp' } : null;
+    if (!kind) throw new BadRequestException('Formato inválido. Envie uma imagem JPG, PNG ou WEBP.');
+    const userId = (req.user as { id: string }).id;
+    const key = `avatars/${createHash('sha256').update(body).digest('hex')}.${kind.ext}`;
+    await this.storage.put(key, body, kind.type);
+    return { avatarUrl: await this.usersService.replaceAvatar(userId, this.storage.publicUrl(key), this.storage) };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me/avatar')
+  async removeAvatar(@Req() req: Request) {
+    await this.usersService.replaceAvatar((req.user as { id: string }).id, null, this.storage);
+    return { avatarUrl: null };
   }
 }
