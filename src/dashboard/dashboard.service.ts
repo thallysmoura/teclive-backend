@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { BadGatewayException, ForbiddenException, Injectable } from '@nestjs/common';
+import { AiService } from '../ai/ai.service.js';
 import { QuotesService } from '../comercial/quotes.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ServiceOrdersService } from '../operacional/service-orders.service.js';
@@ -17,7 +18,41 @@ const round = (v: number) => Math.round(v * 100) / 100;
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly prisma: PrismaService, private readonly quotes: QuotesService, private readonly orders: ServiceOrdersService) {}
+  constructor(private readonly prisma: PrismaService, private readonly quotes: QuotesService, private readonly orders: ServiceOrdersService, private readonly ai: AiService) {}
+
+  /** Resumo executivo gerado por IA a partir dos números do painel (só administradores). */
+  async aiSummary(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'ADMIN') throw new ForbiddenException('Apenas administradores usam o resumo com IA.');
+    const data = await this.overview(userId);
+    const facts = JSON.stringify(data).slice(0, 14000);
+    const system = [
+      'Você é um consultor executivo sênior (COO) da Teclive, empresa brasileira de serviços e obras de tecnologia.',
+      'Receberá os números do painel executivo da empresa e deve orientar o diretor. Responda SEMPRE em português do Brasil, em tom direto e profissional.',
+      'Use somente os dados fornecidos. Nunca invente números; quando citar valores, use o formato R$ 1.234,56 ou "R$ 20,5 mil".',
+      'Devolva APENAS um JSON com esta estrutura:',
+      '{"panorama": string (3 a 5 frases sobre como a empresa está),',
+      ' "indicadores": [{"rotulo": string, "valor": string, "leitura": string}] (3 a 5 itens com os números que mais importam),',
+      ' "atencao": [{"titulo": string, "detalhe": string, "prioridade": "alta"|"media"|"baixa"}] (o que exige atenção, do mais grave ao menos grave),',
+      ' "time": [{"titulo": string, "detalhe": string}] (como agir com o time: cobranças, reconhecimentos, alinhamentos),',
+      ' "estrategia": [{"titulo": string, "passos": string[], "impacto": string}] (ações estratégicas para sanar as dores, priorizadas)}',
+    ].join('\n');
+    const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: `Dados do painel (JSON):\n${facts}` }], { json: true, temperature: 0.3, maxTokens: 1800 });
+    try {
+      const parsed = JSON.parse(result.text) as Record<string, unknown>;
+      const list = (v: unknown) => (Array.isArray(v) ? v.slice(0, 8) : []);
+      return {
+        generatedAt: new Date().toISOString(),
+        panorama: typeof parsed.panorama === 'string' ? parsed.panorama : '',
+        indicadores: list(parsed.indicadores),
+        atencao: list(parsed.atencao),
+        time: list(parsed.time),
+        estrategia: list(parsed.estrategia),
+      };
+    } catch {
+      throw new BadGatewayException('A IA devolveu uma resposta inválida. Tente novamente.');
+    }
+  }
 
   async overview(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true, permissions: true } });
