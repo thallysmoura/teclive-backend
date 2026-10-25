@@ -10,10 +10,11 @@ import { OperacionalModule } from './operacional/operacional.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
+import { AiModule } from './ai/ai.module.js';
 import { CadastrosModule } from './cadastros/cadastros.module.js';
 
 @Module({
-  imports: [PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, SettingsModule, NotificationsModule],
+  imports: [PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, SettingsModule, NotificationsModule, AiModule],
   controllers: [AppController],
   providers: [AppService],
 })
