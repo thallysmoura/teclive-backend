@@ -12,8 +12,8 @@ export class NavigationService {
     if (!user) throw new UnauthorizedException();
     const items = await this.prisma.sidebarItem.findMany({ orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
     if (user.role === 'ADMIN') {
-      const totalUsers = await this.prisma.user.count();
-      return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item);
+      const [totalUsers, pendingSuggestions] = await Promise.all([this.prisma.user.count(), this.prisma.suggestion.count({ where: { status: 'NOVA' } })]);
+      return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item.key === 'envios_melhorias' ? { ...item, badge: pendingSuggestions } : item);
     }
     const visible = new Set(items.filter((item) => user.permissions.includes(item.key)).map((item) => item.parentKey).filter(Boolean));
     return items.filter((item) => item.key === 'ajuda' || (['log_acesso', 'dados_empresa'].includes(item.key) && user.permissions.includes(item.key)) || (item.section === 'main' && (user.permissions.includes(item.key) || visible.has(item.key))))

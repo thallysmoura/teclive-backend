@@ -7,6 +7,7 @@ import { R2Service } from '../storage/r2.service.js';
 
 const CATEGORIES = ['Visual / layout', 'Novo campo ou coluna', 'Novo filtro ou busca', 'Novo relatório ou gráfico', 'Fluxo / usabilidade', 'Desempenho', 'Correção de erro', 'Outro'];
 const STATUSES = ['NOVA', 'EM_ANALISE', 'PLANEJADA', 'CONCLUIDA', 'DESCARTADA'];
+const STATUS_LABEL: Record<string, string> = { NOVA: 'Pendente', EM_ANALISE: 'Em análise', PLANEJADA: 'Planejada', CONCLUIDA: 'Resolvido', DESCARTADA: 'Descartada' };
 const MAX_IMAGE = 1200 * 1024;
 const LIMIT_PER_MINUTE = 6;
 const hits = new Map<string, number[]>();
@@ -69,6 +70,12 @@ export class SuggestionsController {
     return saved;
   }
 
+  /** Sugestões enviadas pela própria pessoa, com a situação de cada uma. */
+  @Get('mine')
+  mine(@Req() req: Request) {
+    return this.prisma.suggestion.findMany({ where: { userId: (req.user as { id: string }).id }, orderBy: { createdAt: 'desc' }, take: 100, select: { id: true, title: true, description: true, category: true, screenTitle: true, imageUrl: true, status: true, createdAt: true } });
+  }
+
   /** Lista para administradores. */
   @Get()
   async list(@Req() req: Request) {
@@ -81,7 +88,21 @@ export class SuggestionsController {
   async setStatus(@Req() req: Request, @Param('id') id: string, @Body() body: { status?: string }) {
     if (!(await this.isAdmin(req))) throw new ForbiddenException('Apenas administradores alteram o andamento.');
     if (!body.status || !STATUSES.includes(body.status)) throw new BadRequestException('Situação inválida.');
+    const actorId = (req.user as { id: string }).id;
+    const current = await this.prisma.suggestion.findUnique({ where: { id }, select: { status: true, title: true, userId: true, user: { select: { name: true, role: true } } } });
+    if (!current) throw new BadRequestException('Sugestão não encontrada.');
+    if (current.status === body.status) return { ok: true };
     await this.prisma.suggestion.update({ where: { id }, data: { status: body.status } });
+
+    // Avisa todos os administradores (e quem enviou, se não for admin) sobre a mudança de situação.
+    const actor = await this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true } });
+    const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
+    const label = STATUS_LABEL[body.status];
+    const title = body.status === 'CONCLUIDA' ? 'Sugestão resolvida' : 'Sugestão atualizada';
+    const at = new Date().toISOString();
+    const rows = admins.map((a) => ({ userId: a.id, title, message: `${actor?.name ?? 'Um administrador'} marcou a sugestão "${current.title}" (de ${current.user.name}) como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '/sugestoes' } }));
+    if (!admins.some((a) => a.id === current.userId)) rows.push({ userId: current.userId, title, message: `Sua sugestão "${current.title}" agora está como ${label}.`, data: { type: 'suggestion', suggestionId: id, status: body.status, at, url: '' } });
+    await this.prisma.notification.createMany({ data: rows });
     return { ok: true };
   }
 }
