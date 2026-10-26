@@ -74,6 +74,18 @@ export class AuthController {
     return { user: result.user };
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('google')
+  async google(@Body() body: { idToken?: string; keepConnected?: boolean }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    if (typeof body?.idToken !== 'string' || body.idToken.length < 20 || body.idToken.length > 4096) throw new BadRequestException('Token do Google inválido.');
+    const device = detectDevice(req.headers['user-agent']);
+    const result = await this.authService.loginWithGoogle(body.idToken, !!body.keepConnected, device);
+    await this.accessLogs.record(result.user, device, { email: result.user.email, password: '', keepConnected: !!body.keepConnected } as never, req.ip, req.headers['user-agent']);
+    if (await this.usersService.notifyAccessRequest(result.user.id).catch(() => false)) this.presence.notifyAdmins();
+    this.setAuthCookies(res, result.accessToken, result.refreshToken, !!body.keepConnected);
+    return { user: result.user };
+  }
+
   @Post('refresh')
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const rawRefreshToken = req.cookies?.[REFRESH_COOKIE];

@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service.js';
 import { RefreshTokenService } from './refresh-token.service.js';
+import { GoogleService } from './google.service.js';
 import { LoginDto } from './dto/login.dto.js';
 
 export const ACCESS_TOKEN_TTL = '15m';
@@ -14,6 +15,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly refreshTokens: RefreshTokenService,
+    private readonly google: GoogleService,
   ) {}
 
   private signAccessToken(user: { id: string; email: string }) {
@@ -21,6 +23,17 @@ export class AuthService {
       { sub: user.id, email: user.email },
       { expiresIn: ACCESS_TOKEN_TTL },
     );
+  }
+
+  /** Login com Google: só entra quem já tem cadastro (o administrador libera o e-mail). */
+  async loginWithGoogle(idToken: string, keepConnected: boolean, device: string) {
+    const g = await this.google.verify(idToken);
+    const user = await this.usersService.findByEmail(g.email);
+    if (!user) throw new UnauthorizedException('Este e-mail do Google não tem acesso. Peça ao administrador para cadastrá-lo.');
+    const accessToken = await this.signAccessToken(user);
+    const refreshToken = await this.refreshTokens.issue(user.id, keepConnected);
+    await this.usersService.recordLogin(user.id, device);
+    return { accessToken, refreshToken, user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, role: user.role, status: user.status, permissions: user.permissions } };
   }
 
   async login(dto: LoginDto, device: string) {

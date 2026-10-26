@@ -1,3 +1,4 @@
+import { GoogleService } from './google.service.js';
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -20,6 +21,6 @@ import { R2Service } from '../storage/r2.service.js';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, RefreshTokenService, R2Service],
+  providers: [AuthService, GoogleService, JwtStrategy, RefreshTokenService, R2Service],
 })
 export class AuthModule {}
