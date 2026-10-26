@@ -816,3 +816,37 @@ model DelinquencyBlock {
 
   @@map("delinquency_blocks")
 }
+
+/// Gestão de Obras: plantas (imagens) anexadas a uma OS; cada nova imagem é uma versão com data.
+model WorkPlan {
+  id        String      @id @default(uuid())
+  orderId   String
+  title     String      @db.VarChar(200)
+  fileUrl   String      @db.VarChar(500)
+  userId    String?
+  userName  String      @db.VarChar(200)
+  createdAt DateTime    @default(now())
+  points    WorkPoint[]
+
+  @@index([orderId, createdAt(sort: Desc)])
+  @@map("work_plans")
+}
+
+model WorkPoint {
+  id          String    @id @default(uuid())
+  planId      String
+  plan        WorkPlan  @relation(fields: [planId], references: [id], onDelete: Cascade)
+  orderId     String
+  number      Int
+  x           Float
+  y           Float
+  description String    @db.VarChar(1000)
+  done        Boolean   @default(false)
+  userId      String?
+  userName    String    @db.VarChar(200)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([planId])
+  @@map("work_points")
+}

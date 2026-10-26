@@ -4,10 +4,11 @@ import { LookupsService } from './lookups.service.js';
 import { OpsModule } from '../ops/ops.module.js';
 import { R2Service } from '../storage/r2.service.js';
 import { ServiceOrdersService } from './service-orders.service.js';
+import { WorkPlansController } from './work-plans.controller.js';
 
 @Module({
   imports: [OpsModule],
-  controllers: [LookupsController, ServiceOrdersController],
+  controllers: [LookupsController, ServiceOrdersController, WorkPlansController],
   providers: [LookupsService, ServiceOrdersService, R2Service],
   exports: [ServiceOrdersService],
 })
