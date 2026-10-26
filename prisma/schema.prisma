@@ -727,3 +727,20 @@ model ContractHistory {
   @@index([contractId, at(sort: Desc)])
   @@map("contract_history")
 }
+
+model OpsEvent {
+  id          String   @id @default(uuid())
+  type        String   @db.VarChar(20)
+  orderId     String?
+  orderNumber Int?
+  clientName  String?  @db.VarChar(200)
+  userId      String?
+  userName    String   @default("") @db.VarChar(200)
+  avatarUrl   String?
+  text        String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@map("ops_events")
+}

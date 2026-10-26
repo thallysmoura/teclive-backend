@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { OpsService } from '../ops/ops.service.js';
 import { R2Service } from '../storage/r2.service.js';
 import { Prisma, type ServiceOrder } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -28,7 +29,7 @@ const asNumber = (v: unknown) => Number(v ?? 0);
 
 @Injectable()
 export class ServiceOrdersService {
-  constructor(private readonly prisma: PrismaService, private readonly storage: R2Service) {}
+  constructor(private readonly prisma: PrismaService, private readonly storage: R2Service, private readonly ops: OpsService) {}
 
   /** Aberta + prazo vencido = "Em atraso" (o eugestor calcula isso na hora). */
   private effective(o: Pick<ServiceOrder, 'status' | 'scheduleEnd'>) {
@@ -247,6 +248,8 @@ export class ServiceOrdersService {
         data: admins.map((a) => ({ userId: a.id, title: `Novo comentário na OS ${number}`, message: `${user.name}: ${snippet}`, data: { type: 'os-comment', serviceOrderId: id, url: `/operacional/ordens-servico?os=${id}` } })),
       });
     }
+    const imageUrl = files.find((f) => f.fileUrl)?.fileUrl ?? null;
+    void this.ops.record({ type: content ? 'comment' : 'attachment', order: { id, number: o.number, personName: o.personName }, user, text: content || `${files.length} imagem(ns) anexada(s)`, imageUrl });
     return this.out(updated);
   }
 
@@ -354,25 +357,33 @@ export class ServiceOrdersService {
     if (pending.length) throw new BadRequestException(pending.map((p) => p.mensagem).join(' '));
     const d = (o.detail ?? {}) as Detail;
     d.fechamento = { causa: input.cause ? { descricao: input.cause } : null, solucao: input.solution ? { descricao: input.solution } : null };
-    return this.out(await this.touch(id, { status: 4, closedAt: new Date(), causeName: input.cause || null, solutionName: input.solution || null }, d, { user: userName, text: `Ordem de Serviço fechada por '${userName}'` }));
+    const updated = await this.touch(id, { status: 4, closedAt: new Date(), causeName: input.cause || null, solutionName: input.solution || null }, d, { user: userName, text: `Ordem de Serviço fechada por '${userName}'` });
+    void this.ops.record({ type: 'closed', order: { id, number: o.number, personName: o.personName }, user: { name: userName }, text: 'OS fechada' });
+    return this.out(updated);
   }
 
   async cancel(userName: string, id: string) {
     const o = await this.load(id);
     if (![0, 1, 3, 7, 8].includes(o.status)) throw new BadRequestException('Esta OS não pode ser cancelada.');
-    return this.out(await this.touch(id, { status: 2, cancelledAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço cancelada por '${userName}'` }));
+    const updated = await this.touch(id, { status: 2, cancelledAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço cancelada por '${userName}'` });
+    void this.ops.record({ type: 'cancelled', order: { id, number: o.number, personName: o.personName }, user: { name: userName }, text: 'OS cancelada' });
+    return this.out(updated);
   }
 
   async reopen(userName: string, id: string) {
     const o = await this.load(id);
     if (![2, 4, 3].includes(o.status)) throw new BadRequestException('Esta OS já está aberta ou foi faturada.');
-    return this.out(await this.touch(id, { status: 0, cancelledAt: null, closedAt: null, interruptedAt: null }, o.detail as Detail, { user: userName, text: `Ordem de Serviço reaberta por '${userName}'` }));
+    const updated = await this.touch(id, { status: 0, cancelledAt: null, closedAt: null, interruptedAt: null }, o.detail as Detail, { user: userName, text: `Ordem de Serviço reaberta por '${userName}'` });
+    void this.ops.record({ type: 'reopened', order: { id, number: o.number, personName: o.personName }, user: { name: userName }, text: 'OS reaberta' });
+    return this.out(updated);
   }
 
   async interrupt(userName: string, id: string) {
     const o = await this.load(id);
     if (!OPEN.includes(o.status)) throw new BadRequestException('Só é possível interromper uma OS aberta.');
-    return this.out(await this.touch(id, { status: 3, interruptedAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço interrompida por '${userName}'` }));
+    const updated = await this.touch(id, { status: 3, interruptedAt: new Date() }, o.detail as Detail, { user: userName, text: `Ordem de Serviço interrompida por '${userName}'` });
+    void this.ops.record({ type: 'interrupted', order: { id, number: o.number, personName: o.personName }, user: { name: userName }, text: 'OS interrompida (impedimento)' });
+    return this.out(updated);
   }
 
 

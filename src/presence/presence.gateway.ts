@@ -31,6 +31,17 @@ export class PresenceGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.server?.to('admins').emit('notification:new');
   }
 
+  /** Envia um evento operacional só a quem está com o Painel de Acompanhamento aberto. */
+  emitOps(event: unknown) {
+    this.server?.to('ops-panel').emit('ops:event', event);
+  }
+
+  @SubscribeMessage('ops:join')
+  opsJoin(@ConnectedSocket() socket: Socket) { void socket.join('ops-panel'); }
+
+  @SubscribeMessage('ops:leave')
+  opsLeave(@ConnectedSocket() socket: Socket) { void socket.leave('ops-panel'); }
+
   private readonly broadcast = (change: { id: string; presence: Presence }) => {
     this.server.to('admins').to(`user:${change.id}`).emit('presence:update', change);
   };
