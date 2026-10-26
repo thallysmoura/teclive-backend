@@ -80,6 +80,11 @@ export class AuthController {
     if (typeof body?.idToken !== 'string' || body.idToken.length < 20 || body.idToken.length > 4096) throw new BadRequestException('Token do Google inválido.');
     const device = detectDevice(req.headers['user-agent']);
     const result = await this.authService.loginWithGoogle(body.idToken, !!body.keepConnected, device);
+    // Quem já tem cadastro só troca a foto pela do Google (a foto antiga do R2 é apagada).
+    if (result.picture && /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//i.test(result.picture)) {
+      const photo = result.picture.replace(/=s\d+-c$/, '=s256-c');
+      if (photo !== result.user.avatarUrl) result.user.avatarUrl = await this.usersService.replaceAvatar(result.user.id, photo, this.storage);
+    }
     await this.accessLogs.record(result.user, device, { email: result.user.email, password: '', keepConnected: !!body.keepConnected } as never, req.ip, req.headers['user-agent']);
     if (await this.usersService.notifyAccessRequest(result.user.id).catch(() => false)) this.presence.notifyAdmins();
     this.setAuthCookies(res, result.accessToken, result.refreshToken, !!body.keepConnected);
