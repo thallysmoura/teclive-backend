@@ -152,4 +152,76 @@ export class DashboardService {
     ]);
     return { users, active7, pending, logs7 };
   }
+
+  /** Relatórios de dados estratégicos (mesmos números do painel executivo, em formato de documento). */
+  async strategicReport(userId: string, kind: string) {
+    const [data, user, company] = await Promise.all([
+      this.overview(userId) as Promise<Record<string, any>>,
+      this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+      this.prisma.companyProfile.findFirst({ select: { legalName: true, tradeName: true } }),
+    ]);
+    const int = (v: unknown) => Number(v ?? 0).toLocaleString('pt-BR');
+    const brl = (v: unknown) => Number(v ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const pct = (v: unknown) => `${Number(v ?? 0).toLocaleString('pt-BR')}%`;
+    const day = (v: unknown) => (v ? new Date(v as string).toLocaleDateString('pt-BR') : '-');
+    const monthLabel = (m: string) => { const [y, mo] = String(m).split('-'); return mo ? `${mo}/${y}` : String(m); };
+    type Datum = { label: string; value: number };
+    const list = (d: Datum[] | undefined, money: boolean) => (d ?? []).map((x) => [x.label, money ? brl(x.value) : int(x.value)]);
+    const sections: Record<string, unknown>[] = [];
+    const want = (k: string) => kind === 'geral' || kind === k;
+
+    const c = data.comercial;
+    if (c && want('comercial')) {
+      sections.push({
+        title: 'Comercial — orçamentos e vendas',
+        summary: [['Orçamentos no total', int(c.total)], ['Em aberto', `${int(c.openCount)} (${brl(c.openValue)})`], ['Vendas ganhas', `${int(c.wonCount)} (${brl(c.wonValue)})`], ['Ticket médio', brl(c.averageTicket)], ['Taxa de conversão', pct(c.conversionRate)], ['Receita recorrente', brl(c.recurringTotal)], ['Leads ativos', int(c.leads)], ['Ações de venda', int(c.actions)], ['A vencer em 7 dias', int(c.expiring)]],
+      });
+      if (c.statuses?.length) sections.push({ title: 'Orçamentos por situação', columns: [{ label: 'Situação', width: 489 }, { label: 'Quantidade', width: 200, align: 'right' }], rows: list(c.statuses, false) });
+      if (c.monthlyWon?.length) sections.push({ title: 'Vendas ganhas por mês', columns: [{ label: 'Mês', width: 489 }, { label: 'Valor', width: 200, align: 'right' }], rows: c.monthlyWon.map((x: Datum) => [monthLabel(x.label), brl(x.value)]) });
+      if (c.bySeller?.length) sections.push({ title: 'Vendas por vendedor', columns: [{ label: 'Vendedor', width: 489 }, { label: 'Valor', width: 200, align: 'right' }], rows: list(c.bySeller, true) });
+      if (c.topClients?.length) sections.push({ title: 'Principais clientes', columns: [{ label: 'Cliente', width: 489 }, { label: 'Valor', width: 200, align: 'right' }], rows: list(c.topClients, true) });
+      if (c.nextToExpire?.length) sections.push({ title: 'Orçamentos próximos do vencimento', columns: [{ label: 'Nº', width: 70 }, { label: 'Cliente', width: 330 }, { label: 'Título', width: 169 }, { label: 'Validade', width: 120, align: 'center' }], rows: c.nextToExpire.map((q: { number: number; personName: string; title: string | null; validUntil: string }) => [String(q.number), q.personName, q.title ?? '', day(q.validUntil)]) });
+    }
+
+    const o = data.operacional;
+    if (o && want('operacional')) {
+      sections.push({
+        title: 'Operacional — ordens de serviço e obras',
+        summary: [['Ordens de serviço', int(o.total)], ['Em aberto', `${int(o.open)} (${brl(o.openValue)})`], ['Atrasadas', int(o.late)], ['Valor total', brl(o.value)], ['Prontas para fechar', int(o.ready)], ['Obras em andamento', int(o.active)], ['Média para fechar', `${int(o.averageCloseDays)} dias`], ['Entregas no prazo', o.onTimePercent === null ? '-' : pct(o.onTimePercent)], ['Materiais entregues', pct(o.materialsPercent)], ['Unidades pendentes', int(o.pendingUnits)], ['Faturado', `${int(o.billedCount)} (${brl(o.billedValue)})`], ['Vendas sem ordem de serviço', `${int(o.pendingQuotes)} (${brl(o.pendingQuotesValue)})`]],
+      });
+      if (o.byStatus?.length) sections.push({ title: 'Ordens por situação', columns: [{ label: 'Situação', width: 489 }, { label: 'Quantidade', width: 200, align: 'right' }], rows: list(o.byStatus, false) });
+      if (o.byType?.length) sections.push({ title: 'Ordens por tipo', columns: [{ label: 'Tipo', width: 489 }, { label: 'Quantidade', width: 200, align: 'right' }], rows: list(o.byType, false) });
+      if (o.byTechnician?.length) sections.push({ title: 'Ordens por técnico', columns: [{ label: 'Técnico', width: 489 }, { label: 'Quantidade', width: 200, align: 'right' }], rows: list(o.byTechnician, false) });
+      if (o.monthly?.length) sections.push({ title: 'Ordens abertas por mês', columns: [{ label: 'Mês', width: 289 }, { label: 'Quantidade', width: 200, align: 'right' }, { label: 'Valor', width: 200, align: 'right' }], rows: o.monthly.map((m: { month: string; count: number; value: number }) => [monthLabel(m.month), int(m.count), brl(m.value)]) });
+      if (o.lateList?.length) sections.push({ title: 'Ordens atrasadas (mais críticas)', columns: [{ label: 'Nº', width: 90 }, { label: 'Cliente', width: 489 }, { label: 'Prazo', width: 110, align: 'center' }], rows: o.lateList.map((x: { number: number; personName: string; scheduleEnd: string | null }) => [String(x.number), x.personName, day(x.scheduleEnd)]) });
+    }
+
+    const e = data.estoque;
+    if (e && want('estoque')) {
+      sections.push({
+        title: 'Estoque — posição e movimentação',
+        summary: [['Locais de estoque', int(e.locations)], ['Produtos', int(e.products)], ['Unidades em estoque', int(e.units)], ['Valor de custo', brl(e.costValue)], ['Valor de venda', brl(e.saleValue)], ['Produtos sem saldo', int(e.zero)], ['Produtos com saldo negativo', int(e.negative)], ['Movimentos (30 dias)', int(e.movements30)], ['Última movimentação', day(e.lastMovement)]],
+      });
+      if (e.topProducts?.length) sections.push({ title: 'Produtos de maior valor em estoque', columns: [{ label: 'Produto', width: 489 }, { label: 'Valor', width: 200, align: 'right' }], rows: list(e.topProducts, true) });
+    }
+
+    const k = data.cadastros;
+    const g = data.governanca;
+    if ((k || g) && want('cadastros')) {
+      sections.push({
+        title: 'Base cadastral e equipe',
+        summary: [...(k ? ([['Clientes', int(k.clients)], ['Fornecedores', int(k.suppliers)], ['Técnicos', int(k.technicians)], ['Vendedores', int(k.sellers)], ['Serviços', int(k.services)], ['Produtos', int(k.products)], ['Marcas', int(k.brands)]] as [string, string][]) : []), ...(g ? ([['Usuários', int(g.users)], ['Ativos nos últimos 7 dias', int(g.active7)], ['Aguardando permissão', int(g.pending)], ['Acessos nos últimos 7 dias', int(g.logs7)]] as [string, string][]) : [])],
+      });
+    }
+
+    const titles: Record<string, string> = { geral: 'Dados Estratégicos — Visão Geral', comercial: 'Dados Estratégicos — Comercial', operacional: 'Dados Estratégicos — Operacional', estoque: 'Dados Estratégicos — Estoque', cadastros: 'Dados Estratégicos — Cadastros e Equipe' };
+    return {
+      title: titles[kind] ?? titles.geral,
+      company: company?.legalName || company?.tradeName || 'Teclive',
+      generatedBy: user?.name ?? '',
+      generatedAt: new Date().toISOString(),
+      filters: [['Relatório:', titles[kind]?.replace('Dados Estratégicos — ', '') ?? 'Visão Geral'], ['Período:', 'Posição atual dos dados'], ['Fonte:', 'Painel executivo do sistema']],
+      sections,
+    };
+  }
 }

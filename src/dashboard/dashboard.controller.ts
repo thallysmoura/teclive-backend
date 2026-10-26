@@ -1,4 +1,4 @@
-import { Controller, Get, HttpException, Post, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpException, Post, Query, Req, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { DashboardService } from './dashboard.service.js';
@@ -9,6 +9,12 @@ const aiHits = new Map<string, number[]>();
 @Controller('dashboard')
 export class DashboardController {
   constructor(private readonly service: DashboardService) {}
+
+  /** Relatórios de dados estratégicos: kind = geral | comercial | operacional | estoque | cadastros. */
+  @Get('report')
+  report(@Req() req: Request, @Query('kind') kind?: string) {
+    return this.service.strategicReport((req.user as { id: string }).id, ['comercial', 'operacional', 'estoque', 'cadastros'].includes(kind ?? '') ? (kind as string) : 'geral');
+  }
 
   @Get('overview')
   overview(@Req() req: Request) { return this.service.overview((req.user as { id: string }).id); }
