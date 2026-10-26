@@ -1,9 +1,7 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpException, Patch, Param, Post, Req, UseGuards } from '@nestjs/common';
-import type { Request } from 'express';
-import { createHash } from 'node:crypto';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpException, NotFoundException, Patch, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { R2Service } from '../storage/r2.service.js';
 
 const CATEGORIES = ['Visual / layout', 'Novo campo ou coluna', 'Novo filtro ou busca', 'Novo relatório ou gráfico', 'Fluxo / usabilidade', 'Desempenho', 'Correção de erro', 'Outro'];
 const STATUSES = ['NOVA', 'EM_ANALISE', 'PLANEJADA', 'CONCLUIDA', 'DESCARTADA'];
@@ -18,7 +16,7 @@ const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\
 @UseGuards(JwtAuthGuard)
 @Controller('suggestions')
 export class SuggestionsController {
-  constructor(private readonly prisma: PrismaService, private readonly storage: R2Service) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private async isAdmin(req: Request) {
     const u = await this.prisma.user.findUnique({ where: { id: (req.user as { id: string }).id }, select: { role: true } });
@@ -28,22 +26,6 @@ export class SuggestionsController {
   @Get('categories')
   categories() {
     return CATEGORIES;
-  }
-
-  /** Imagem anotada (WEBP/JPG/PNG): nome = hash do conteúdo, guardada no R2. */
-  @Post('image')
-  async image(@Req() req: Request) {
-    const body = req.body as unknown;
-    if (!Buffer.isBuffer(body) || body.length === 0) throw new BadRequestException('Imagem não enviada.');
-    if (body.length > MAX_IMAGE) throw new BadRequestException('A imagem ficou grande demais (máximo de 1,2 MB).');
-    const isJpeg = body[0] === 0xff && body[1] === 0xd8 && body[2] === 0xff;
-    const isPng = body.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    const isWebp = body.subarray(0, 4).toString('ascii') === 'RIFF' && body.subarray(8, 12).toString('ascii') === 'WEBP';
-    const kind = isJpeg ? { ext: 'jpg', type: 'image/jpeg' } : isPng ? { ext: 'png', type: 'image/png' } : isWebp ? { ext: 'webp', type: 'image/webp' } : null;
-    if (!kind) throw new BadRequestException('Formato de imagem inválido.');
-    const key = `suggestions/${createHash('sha256').update(body).digest('hex')}.${kind.ext}`;
-    await this.storage.put(key, body, kind.type);
-    return { imageUrl: this.storage.publicUrl(key) };
   }
 
   @Post()
@@ -58,30 +40,65 @@ export class SuggestionsController {
     const category = CATEGORIES.includes(clean(body.category, 40)) ? clean(body.category, 40) : 'Outro';
     const title = clean(body.title, 160) || clean(description.split(/\n\nObservações/)[0], 80) || 'Sugestão de melhoria';
     const screenPath = clean(body.screenPath, 300);
-    const imageUrl = clean(body.imageUrl, 500);
+    const imageData = typeof body.imageData === 'string' ? body.imageData : '';
     if (description.length < 10) throw new BadRequestException('Descreva a melhoria com um pouco mais de detalhe.');
     if (!screenPath.startsWith('/')) throw new BadRequestException('Tela inválida.');
-    if (imageUrl && !this.storage.keyFromUrl(imageUrl)) throw new BadRequestException('Imagem inválida.');
+    // A captura de tela fica no próprio Postgres (base64), sem ocupar o armazenamento do Cloudflare.
+    if (imageData) {
+      const m = /^data:image\/(webp|jpeg|png);base64,([A-Za-z0-9+/=]+)$/.exec(imageData);
+      if (!m) throw new BadRequestException('Imagem inválida.');
+      const bytes = Buffer.from(m[2], 'base64');
+      if (bytes.length > MAX_IMAGE) throw new BadRequestException('A imagem ficou grande demais (máximo de 1,2 MB).');
+      const ok = m[1] === 'png' ? bytes.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) : m[1] === 'jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 : bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+      if (!ok) throw new BadRequestException('O arquivo não é uma imagem válida.');
+    }
 
-    const saved = await this.prisma.suggestion.create({
-      data: { userId, category, title, description, screenPath, screenTitle: clean(body.screenTitle, 200) || screenPath, imageUrl: imageUrl || null, viewport: clean(body.viewport, 40) || null, userAgent: clean(req.headers['user-agent'], 300) || null },
+    return this.prisma.suggestion.create({
+      data: { userId, category, title, description, screenPath, screenTitle: clean(body.screenTitle, 200) || screenPath, imageData: imageData || null, viewport: clean(body.viewport, 40) || null, userAgent: clean(req.headers['user-agent'], 300) || null },
       select: { id: true, createdAt: true },
     });
-    return saved;
+  }
+
+  /** Lista leve (sem o base64): a imagem de cada sugestão vem de GET :id/image. */
+  private static readonly LIST = { id: true, title: true, description: true, category: true, screenTitle: true, screenPath: true, viewport: true, imageUrl: true, status: true, createdAt: true } as const;
+  private withFlag<T extends { imageUrl: string | null }>(rows: (T & { id: string })[], ids: Set<string>) {
+    return rows.map((r) => ({ ...r, hasImage: !!r.imageUrl || ids.has(r.id) }));
+  }
+  private async idsWithData(where: object) {
+    const rows = await this.prisma.suggestion.findMany({ where: { ...where, imageData: { not: null } }, select: { id: true } });
+    return new Set(rows.map((r) => r.id));
   }
 
   /** Sugestões enviadas pela própria pessoa, com a situação de cada uma. */
   @Get('mine')
-  mine(@Req() req: Request) {
-    return this.prisma.suggestion.findMany({ where: { userId: (req.user as { id: string }).id }, orderBy: { createdAt: 'desc' }, take: 100, select: { id: true, title: true, description: true, category: true, screenTitle: true, imageUrl: true, status: true, createdAt: true } });
+  async mine(@Req() req: Request) {
+    const where = { userId: (req.user as { id: string }).id };
+    const [rows, ids] = await Promise.all([this.prisma.suggestion.findMany({ where, orderBy: { createdAt: 'desc' }, take: 100, select: SuggestionsController.LIST }), this.idsWithData(where)]);
+    return this.withFlag(rows, ids);
   }
 
   /** Lista para administradores. */
   @Get()
   async list(@Req() req: Request) {
     if (!(await this.isAdmin(req))) throw new ForbiddenException('Apenas administradores veem as sugestões.');
-    const rows = await this.prisma.suggestion.findMany({ orderBy: { createdAt: 'desc' }, take: 300, include: { user: { select: { name: true, email: true, avatarUrl: true } } } });
-    return rows.map(({ user, ...r }) => ({ ...r, author: user }));
+    const [rows, ids] = await Promise.all([
+      this.prisma.suggestion.findMany({ orderBy: { createdAt: 'desc' }, take: 300, select: { ...SuggestionsController.LIST, user: { select: { name: true, email: true, avatarUrl: true } } } }),
+      this.idsWithData({}),
+    ]);
+    return this.withFlag(rows.map(({ user, ...r }) => ({ ...r, author: user })), ids);
+  }
+
+  /** Imagem da sugestão (base64 do banco → arquivo): só quem enviou ou administradores. */
+  @Get(':id/image')
+  async image(@Req() req: Request, @Param('id') id: string, @Res() res: Response) {
+    const row = await this.prisma.suggestion.findUnique({ where: { id }, select: { userId: true, imageData: true } });
+    if (!row?.imageData) throw new NotFoundException('Imagem não encontrada.');
+    if (row.userId !== (req.user as { id: string }).id && !(await this.isAdmin(req))) throw new ForbiddenException('Sem acesso a esta imagem.');
+    const m = /^data:(image\/[a-z]+);base64,(.+)$/.exec(row.imageData);
+    if (!m) throw new NotFoundException('Imagem não encontrada.');
+    res.setHeader('Content-Type', m[1]);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.send(Buffer.from(m[2], 'base64'));
   }
 
   @Patch(':id/status')

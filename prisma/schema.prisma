@@ -590,6 +590,7 @@ model Suggestion {
   title       String   @db.VarChar(160)
   description String   @db.Text
   imageUrl    String?  @db.VarChar(500)
+  imageData   String?  @db.Text
   viewport    String?  @db.VarChar(40)
   userAgent   String?  @db.VarChar(300)
   status      String   @default("NOVA") @db.VarChar(20)
