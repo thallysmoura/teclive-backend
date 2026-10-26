@@ -240,13 +240,14 @@ export class ServiceOrdersService {
     d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, anexos: files.map(({ fileUrl, ...f }) => ({ ...f, url: fileUrl ?? undefined })) }];
     const updated = await this.touch(id, {}, d, { user: user.name, text: `Comentário adicionado por '${user.name}'` });
     // Administradores recebem como notificação não lida e vão direto para a OS.
-    const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN', id: { not: user.id } }, select: { id: true } });
+    const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
     if (admins.length) {
       const number = String(Math.floor(o.number / 1000)).padStart(3, '0') + '.' + String(o.number % 1000).padStart(3, '0');
       const snippet = content ? (content.length > 120 ? `${content.slice(0, 117)}...` : content) : `${files.length} imagem(ns)`;
       await this.prisma.notification.createMany({
         data: admins.map((a) => ({ userId: a.id, title: `Novo comentário na OS ${number}`, message: `${user.name}: ${snippet}`, data: { type: 'os-comment', serviceOrderId: id, url: `/operacional/ordens-servico?os=${id}` } })),
       });
+      this.ops.notifyAdmins();
     }
     const imageUrl = files.find((f) => f.fileUrl)?.fileUrl ?? null;
     void this.ops.record({ type: content ? 'comment' : 'attachment', order: { id, number: o.number, personName: o.personName }, user, text: content || `${files.length} imagem(ns) anexada(s)`, imageUrl });

@@ -31,6 +31,9 @@ export class OpsService {
     } catch { /* o painel nunca pode atrapalhar a operação */ }
   }
 
+  /** Empurra o sino de notificações dos administradores conectados. */
+  notifyAdmins() { this.gateway.notifyAdmins(); }
+
   async panel() {
     const now = new Date();
     const start = new Date(now); start.setHours(0, 0, 0, 0);
