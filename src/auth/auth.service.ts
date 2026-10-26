@@ -33,7 +33,7 @@ export class AuthService {
     const accessToken = await this.signAccessToken(user);
     const refreshToken = await this.refreshTokens.issue(user.id, keepConnected);
     await this.usersService.recordLogin(user.id, device);
-    return { accessToken, refreshToken, user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, role: user.role, status: user.status, permissions: user.permissions } };
+    return { accessToken, refreshToken, picture: g.picture, user: { id: user.id, email: user.email, name: user.name, avatarUrl: user.avatarUrl, role: user.role, status: user.status, permissions: user.permissions } };
   }
 
   async login(dto: LoginDto, device: string) {
