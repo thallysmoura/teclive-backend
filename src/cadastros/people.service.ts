@@ -179,4 +179,47 @@ export class PeopleService {
     await this.prisma.person.delete({ where: { id } });
     return { ok: true };
   }
+
+  /** Relatório de Cadastro de Pessoas (mesmos filtros e textos do eugestor). */
+  async report(q: { personType?: string; taxpayer?: string; registerType?: string; inactive?: boolean }, userName: string) {
+    const where: Prisma.PersonWhereInput = {};
+    if (q.personType === 'F' || q.personType === 'J') where.type = q.personType;
+    if (q.taxpayer && ['1', '2', '9'].includes(q.taxpayer)) where.taxpayerType = Number(q.taxpayer);
+    const roles: Record<string, keyof Prisma.PersonWhereInput> = { client: 'isClient', supplier: 'isSupplier', employee: 'isEmployee', seller: 'isSeller', carrier: 'isCarrier', technician: 'isTechnician' };
+    if (q.registerType && roles[q.registerType]) (where as Record<string, unknown>)[roles[q.registerType]] = true;
+    if (!q.inactive) where.isActive = true;
+    const [rows, company] = await Promise.all([this.prisma.person.findMany({ where }), this.prisma.companyProfile.findFirst({ select: { legalName: true, tradeName: true } })]);
+    const mask = (v: string | null, type: string) => {
+      const d = (v ?? '').replace(/\D/g, '');
+      if (!d) return 'Não informado';
+      if (type === 'F' && d.length === 11) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+      if (d.length === 14) return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+      return v ?? 'Não informado';
+    };
+    const items = rows
+      .sort((a, b) => a.name.replace(/&amp;/g, '&').localeCompare(b.name.replace(/&amp;/g, '&'), 'pt-BR', { sensitivity: 'base', numeric: true }))
+      .map((p) => ({
+        name: p.name.replace(/&amp;/g, '&'),
+        document: mask(p.document, p.type),
+        rg: (p.type === 'F' ? p.rg : p.stateRegistration) || p.rg || p.stateRegistration || '',
+        phone: p.phone ?? '',
+        municipalRegistration: p.municipalRegistration ?? '',
+        address: p.address || 'Endereço não encontrado.',
+        active: p.isActive,
+        contacts: Array.isArray(p.contacts) ? (p.contacts as { name?: string; phone?: string; email?: string; type?: string }[]) : [],
+      }));
+    const roleLabel: Record<string, string> = { client: 'Clientes', supplier: 'Fornecedores', employee: 'Funcionários', seller: 'Vendedores', carrier: 'Transportadores', technician: 'Técnicos' };
+    return {
+      company: company?.legalName || company?.tradeName || 'Teclive',
+      generatedBy: userName,
+      generatedAt: new Date().toISOString(),
+      filters: {
+        personType: q.personType === 'F' ? 'Fisica' : q.personType === 'J' ? 'Juridica' : 'Fisica/Juridica',
+        taxpayer: q.taxpayer === '1' ? 'Contribuintes' : q.taxpayer === '2' ? 'Isentos' : q.taxpayer === '9' ? 'Não Contribuintes' : 'Contribuintes/Não Contribuintes/Isentos',
+        registerType: (q.registerType && roleLabel[q.registerType]) || 'Todos os tipos de cadastros',
+        status: q.inactive ? 'Cadastros ativos e inativos' : 'Somente cadastros ativos',
+      },
+      items,
+    };
+  }
 }

@@ -284,6 +284,8 @@ model Person {
   stateRegistration     String?  @db.VarChar(40)
   email                 String?  @db.VarChar(200)
   phone                 String?  @db.VarChar(40)
+  address               String?  @db.VarChar(500)
+  contacts              Json?
   isActive              Boolean  @default(true)
   createdAt             DateTime @default(now())
   isLead                Boolean  @default(false)

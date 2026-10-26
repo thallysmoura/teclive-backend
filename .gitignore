@@ -25,3 +25,6 @@ yarn-error.log*
 prisma/data/cadastros.json
 prisma/data/comercial.json
 prisma/data/*.json
+
+# dados de clientes extraídos do relatório (nunca no GitHub)
+prisma/data/*.txt
