@@ -116,11 +116,35 @@ const DATASETS: Record<string, Dataset> = {
   },
 };
 
+DATASETS.estoque = {
+  label: 'Estoque (saldo por produto e local)',
+  defaults: ['description', 'location', 'quantity', 'unit', 'value'],
+  money: (r) => Number(r.quantity ?? 0) * Number(r.costPrice ?? 0),
+  cols: {
+    description: { label: 'Produto', w: 230, get: (r) => r.description, sort: (r) => String(r.description).toLowerCase() },
+    brand: { label: 'Marca', w: 90, get: (r) => r.brand },
+    productGroup: { label: 'Grupo', w: 100, get: (r) => r.productGroup },
+    location: { label: 'Local', w: 120, get: (r) => r.location },
+    unit: { label: 'Un.', w: 40, align: 'center', get: (r) => r.unit },
+    quantity: { label: 'Saldo', w: 70, align: 'right', get: (r) => Number(r.quantity ?? 0).toLocaleString('pt-BR'), sort: (r) => Number(r.quantity ?? 0) },
+    costPrice: { label: 'Custo', w: 80, align: 'right', get: (r) => (r.costPrice == null ? '' : brl(r.costPrice)), sort: (r) => Number(r.costPrice ?? 0) },
+    salePrice: { label: 'Venda', w: 80, align: 'right', get: (r) => (r.salePrice == null ? '' : brl(r.salePrice)), sort: (r) => Number(r.salePrice ?? 0) },
+    value: { label: 'Valor', w: 100, align: 'right', get: (r) => brl(Number(r.quantity ?? 0) * Number(r.costPrice ?? 0)), sort: (r) => Number(r.quantity ?? 0) * Number(r.costPrice ?? 0) },
+  },
+  groups: {
+    location: { label: 'Local de estoque', key: (r) => r.location || 'Sem local' },
+    brand: { label: 'Marca', key: (r) => r.brand || 'Sem marca' },
+    group: { label: 'Grupo', key: (r) => r.productGroup || 'Sem grupo' },
+  },
+};
+
 const CATALOG = `Conjuntos de dados disponíveis (use APENAS estes nomes de campo, filtro e agrupamento):
 pessoas — campos: name,document,type,phone,email,address,sellerName,active,createdAt,roles. filtros: role(client|supplier|employee|seller|carrier|technician|lead), type(F|J), active(true|false), from/to(data de cadastro YYYY-MM-DD), q(texto no nome). agrupar: type,role,active,seller,month.
 orcamentos — campos: number,title,personName,sellerName,status,openedAt,validUntil,wonAt. filtros: seller(texto), status(Cancelado|Recusado|Aberto|Liberado|Vencido|OS Aberta|Concluído), from/to(data de abertura), q(texto no cliente ou título). agrupar: seller,status,month.
 ordens — campos: number,personName,type,status,defectName,causeName,solutionName,openedAt,closedAt,scheduleEnd,total. filtros: status(Aberta|Em atraso|Cancelada|Interrompida|Fechada|Faturada|Faturada Parcialmente|Aguardando Aprovação|Em Atendimento), type(Instalação|Cancelamento|Manutenção Corretiva|Manutenção Preventiva), from/to(data de abertura), q(texto no cliente). agrupar: status,type,month,defect,cause,solution.
-produtos — campos: description,brand,productGroup,unit,costPrice,salePrice,margin,active. filtros: brand(texto), group(texto), active(true|false), q(texto na descrição). agrupar: brand,group,active.`;
+produtos — campos: description,brand,productGroup,unit,costPrice,salePrice,margin,active. filtros: brand(texto), group(texto), active(true|false), q(texto na descrição). agrupar: brand,group,active.
+estoque — saldo atual de cada produto em cada local (use para "itens de estoque", "saldo", "produtos sem saldo/negativos", "valor em estoque"). campos: description,brand,productGroup,location,unit,quantity,costPrice,salePrice,value. filtros: balance(negative|zero|positive), location(texto), brand(texto), group(texto), q(texto no produto). agrupar: location,brand,group.
+Obs.: "produtos" é o cadastro (preço, marca); "estoque" é a quantidade em estoque.`;
 
 const cache = new Map<string, { at: number; value: unknown }>();
 
@@ -136,14 +160,14 @@ export class ReportsAiService {
     if (hit && Date.now() - hit.at < 10 * 60_000) return hit.value; // mesmo pedido em 10 min: sem gastar IA de novo
 
     const today = new Date().toISOString().slice(0, 10);
-    const system = `Você transforma pedidos de relatório em uma consulta estruturada. Hoje é ${today}. Responda SÓ um JSON.\n${CATALOG}\nFormato: {"found":true,"dataset":"...","title":"título curto do relatório","filters":{...},"groupBy":"opcional","columns":["campos opcionais"],"sort":{"field":"campo","dir":"asc|desc"},"limit":número opcional}.\nSe o pedido NÃO puder ser atendido com esses dados (assunto que não existe neles), responda {"found":false,"message":"1 frase explicando que não encontrou essa informação e quais dados existem (pessoas, orçamentos, ordens de serviço, produtos)"}.\nDatas relativas (este mês, ano passado...) viram from/to em YYYY-MM-DD. Não invente filtros fora da lista.`;
+    const system = `Você transforma pedidos de relatório em uma consulta estruturada. Hoje é ${today}. Responda SÓ um JSON.\n${CATALOG}\nFormato: {"found":true,"dataset":"...","title":"título curto do relatório","filters":{...},"groupBy":"opcional","columns":["campos opcionais"],"sort":{"field":"campo","dir":"asc|desc"},"limit":número opcional}.\nSe o pedido NÃO puder ser atendido com esses dados (assunto que não existe neles), responda {"found":false,"message":"1 frase explicando que não encontrou essa informação e quais dados existem (pessoas, orçamentos, ordens de serviço, produtos, estoque)"}.\nDatas relativas (este mês, ano passado...) viram from/to em YYYY-MM-DD. Não invente filtros fora da lista.`;
     const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: text }], { json: true, temperature: 0, maxTokens: 350, feature: 'relatorio-personalizado', userId });
     let plan: Raw;
     try { plan = JSON.parse(result.text); } catch { throw new BadRequestException('Não consegui entender o pedido. Tente reescrever com mais detalhes.'); }
 
     let value: unknown;
     if (!plan.found || !DATASETS[plan.dataset]) {
-      value = { found: false, message: typeof plan.message === 'string' && plan.message ? plan.message : 'Não encontrei essa informação nos dados do sistema. Tenho pessoas, orçamentos, ordens de serviço e produtos.' };
+      value = { found: false, message: typeof plan.message === 'string' && plan.message ? plan.message : 'Não encontrei essa informação nos dados do sistema. Tenho pessoas, orçamentos, ordens de serviço, produtos e estoque.' };
     } else {
       value = { found: true, report: await this.run(userId, text, plan) };
     }
@@ -174,6 +198,18 @@ export class ReportsAiService {
       const st = inverse(OS_STATUS, f.status);
       const tp = inverse(OS_TYPE, f.type);
       return this.prisma.serviceOrder.findMany({ where: { ...(st ? { status: Number(st) } : {}), ...(tp ? { type: Number(tp) } : {}), ...(f.q ? { personName: ci(f.q) } : {}), ...this.range(f, 'openedAt') }, orderBy: { number: 'desc' }, take: 5000, select: { number: true, personName: true, type: true, status: true, defectName: true, causeName: true, solutionName: true, openedAt: true, closedAt: true, scheduleEnd: true, totalServices: true, totalProducts: true } });
+    }
+    if (dataset === 'estoque') {
+      const rows = await this.prisma.stockProductBalance.findMany({
+        where: {
+          ...(f.balance === 'negative' ? { quantity: { lt: 0 } } : f.balance === 'zero' ? { quantity: 0 } : f.balance === 'positive' ? { quantity: { gt: 0 } } : {}),
+          ...(f.location ? { location: { description: ci(f.location) } } : {}),
+          product: { isActive: true, ...(f.brand ? { brand: ci(f.brand) } : {}), ...(f.group ? { productGroup: ci(f.group) } : {}), ...(f.q ? { description: ci(f.q) } : {}) },
+        },
+        include: { product: { select: { description: true, brand: true, productGroup: true, unit: true, costPrice: true, salePrice: true } }, location: { select: { description: true } } },
+        take: 5000,
+      });
+      return rows.map((b) => ({ ...b.product, location: b.location.description, quantity: b.quantity }));
     }
     return this.prisma.stockProduct.findMany({ where: { ...(f.brand ? { brand: ci(f.brand) } : {}), ...(f.group ? { productGroup: ci(f.group) } : {}), ...(f.active === true || f.active === false || f.active === 'true' || f.active === 'false' ? { isActive: f.active === true || f.active === 'true' } : {}), ...(f.q ? { description: ci(f.q) } : {}) }, orderBy: { description: 'asc' }, take: 5000 });
   }
