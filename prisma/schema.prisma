@@ -744,3 +744,75 @@ model OpsEvent {
   @@index([createdAt(sort: Desc)])
   @@map("ops_events")
 }
+
+model ContractTemplate {
+  id          String   @id @default(uuid())
+  description String   @db.VarChar(200)
+  type        Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("contract_templates")
+}
+
+model ContractAdjustment {
+  id            String    @id @default(uuid())
+  at            DateTime  @default(now())
+  userName      String    @db.VarChar(200)
+  filterType    String    @db.VarChar(60)
+  months        Int       @default(0)
+  indexId       Int?
+  groupName     String?   @db.VarChar(120)
+  percent       Decimal   @db.Decimal(8, 4)
+  rounded       Boolean   @default(false)
+  contractCount Int       @default(0)
+  valueBefore   Decimal   @db.Decimal(14, 2)
+  valueAfter    Decimal   @db.Decimal(14, 2)
+  canceledAt    DateTime?
+
+  @@map("contract_adjustments")
+}
+
+model ContractCharge {
+  id          String    @id @default(uuid())
+  contractId  String
+  contractNo  String    @db.VarChar(20)
+  personName  String    @db.VarChar(200)
+  kind        Int       @default(0)
+  competence  String    @db.VarChar(7)
+  description String    @db.VarChar(200)
+  value       Decimal   @db.Decimal(14, 2)
+  canceledAt  DateTime?
+  createdBy   String    @db.VarChar(200)
+  createdAt   DateTime  @default(now())
+
+  @@index([competence])
+  @@map("contract_charges")
+}
+
+model ContractCancellation {
+  id            String   @id @default(uuid())
+  contractId    String
+  contractNo    String   @db.VarChar(20)
+  personName    String   @db.VarChar(200)
+  stage         Int      @default(0)
+  reason        String?
+  effectiveDate DateTime
+  fine          Decimal  @default(0) @db.Decimal(14, 2)
+  createdBy     String   @db.VarChar(200)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("contract_cancellations")
+}
+
+model DelinquencyBlock {
+  id         String   @id @default(uuid())
+  personId   String?
+  personName String   @db.VarChar(200)
+  days       Int
+  userName   String   @db.VarChar(200)
+  at         DateTime @default(now())
+
+  @@map("delinquency_blocks")
+}
