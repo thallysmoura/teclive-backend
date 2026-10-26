@@ -16,11 +16,12 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { SuggestionsModule } from './suggestions/suggestions.module.js';
 import { StorageModule } from './storage/storage.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { ContractsModule } from './contracts/contracts.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { CadastrosModule } from './cadastros/cadastros.module.js';
 
 @Module({
-  imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 240 }]), PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, SettingsModule, NotificationsModule, AiModule, SuggestionsModule, StorageModule, ReportsModule],
+  imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 240 }]), PrismaModule, UsersModule, AuthModule, StockLocationsModule, CadastrosModule, ComercialModule, OperacionalModule, DashboardModule, SettingsModule, NotificationsModule, AiModule, SuggestionsModule, StorageModule, ReportsModule, ContractsModule],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })

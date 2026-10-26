@@ -615,3 +615,115 @@ model AiUsage {
   @@index([createdAt(sort: Desc)])
   @@map("ai_usage")
 }
+
+/// Formas de pagamento usadas nos contratos (importadas do eugestor).
+model PaymentMethod {
+  id            String     @id @default(uuid())
+  legacyId      Int?       @unique
+  description   String     @db.VarChar(120)
+  isActive      Boolean    @default(true)
+  preRegistered Boolean    @default(false)
+  showOnPortal  Boolean    @default(false)
+  contracts     Contract[]
+
+  @@map("payment_methods")
+}
+
+/// Grupos de faturamento dos contratos.
+model BillingGroup {
+  id          String     @id @default(uuid())
+  legacyId    Int?       @unique
+  description String     @db.VarChar(120)
+  isActive    Boolean    @default(true)
+  contracts   Contract[]
+
+  @@map("billing_groups")
+}
+
+/// Contratos de serviço recorrente (Contrato > Contratos).
+model Contract {
+  id              String            @id @default(uuid())
+  legacyId        Int?              @unique
+  number          String            @unique @db.VarChar(20)
+  modality        Int               @default(0)
+  status          Int               @default(0)
+  observation     String?
+  personId        String?
+  personName      String            @db.VarChar(200)
+  personDocument  String?           @db.VarChar(20)
+  personType      String            @default("J") @db.VarChar(1)
+  sellerName      String?           @db.VarChar(200)
+  billingGroupId  String?
+  billingGroup    BillingGroup?     @relation(fields: [billingGroupId], references: [id], onDelete: SetNull)
+  paymentMethodId String?
+  paymentMethod   PaymentMethod?    @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  billingDay      Int
+  dueType         Int?
+  startDate       DateTime
+  endDate         DateTime?
+  adjustIndex     Int?
+  allowAdjust     Boolean           @default(true)
+  penaltyPercent  Decimal           @default(0) @db.Decimal(6, 2)
+  totalGross      Decimal           @default(0) @db.Decimal(14, 2)
+  totalNet        Decimal           @default(0) @db.Decimal(14, 2)
+  createdBy       String            @default("") @db.VarChar(200)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  invoices        ContractInvoice[]
+  history         ContractHistory[]
+
+  @@index([personId])
+  @@map("contracts")
+}
+
+/// Faturas do contrato (cada uma com endereço de prestação e produtos).
+model ContractInvoice {
+  id          String            @id @default(uuid())
+  legacyId    Int?              @unique
+  contractId  String
+  contract    Contract          @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  description String            @db.VarChar(200)
+  type        Int               @default(0)
+  netValue    Decimal           @default(0) @db.Decimal(14, 2)
+  serviceCount Int              @default(1)
+  canceled    Boolean           @default(false)
+  taxPending  Boolean           @default(false)
+  address     Json?
+  createdAt   DateTime          @default(now())
+  products    ContractProduct[]
+
+  @@index([contractId])
+  @@map("contract_invoices")
+}
+
+/// Produtos vinculados a uma fatura, com o saldo por finalidade.
+model ContractProduct {
+  id              String          @id @default(uuid())
+  invoiceId       String
+  invoice         ContractInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  productLegacyId Int?
+  description     String          @db.VarChar(300)
+  identifier      String?         @db.VarChar(60)
+  unitMeasure     Int             @default(3)
+  balanceSale     Decimal         @default(0) @db.Decimal(14, 2)
+  balanceRental   Decimal         @default(0) @db.Decimal(14, 2)
+  balanceGratuity Decimal         @default(0) @db.Decimal(14, 2)
+  balanceWarranty Decimal         @default(0) @db.Decimal(14, 2)
+
+  @@index([invoiceId])
+  @@map("contract_products")
+}
+
+/// Histórico de alterações do contrato.
+model ContractHistory {
+  id         String   @id @default(uuid())
+  contractId String
+  contract   Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  at         DateTime @default(now())
+  description String  @db.Text
+  isLog      Boolean  @default(false)
+  userName   String   @default("") @db.VarChar(200)
+
+  @@index([contractId, at(sort: Desc)])
+  @@map("contract_history")
+}
