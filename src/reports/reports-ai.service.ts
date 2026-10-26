@@ -138,12 +138,15 @@ DATASETS.estoque = {
   },
 };
 
+DATASETS.empresa = { label: 'Dados da empresa', defaults: [], cols: {}, groups: {} };
+
 const CATALOG = `Conjuntos de dados disponíveis (use APENAS estes nomes de campo, filtro e agrupamento):
 pessoas — campos: name,document,type,phone,email,address,sellerName,active,createdAt,roles. filtros: role(client|supplier|employee|seller|carrier|technician|lead), type(F|J), active(true|false), from/to(data de cadastro YYYY-MM-DD), q(texto no nome). agrupar: type,role,active,seller,month.
 orcamentos — campos: number,title,personName,sellerName,status,openedAt,validUntil,wonAt. filtros: seller(texto), status(Cancelado|Recusado|Aberto|Liberado|Vencido|OS Aberta|Concluído), from/to(data de abertura), q(texto no cliente ou título). agrupar: seller,status,month.
 ordens — campos: number,personName,type,status,defectName,causeName,solutionName,openedAt,closedAt,scheduleEnd,total. filtros: status(Aberta|Em atraso|Cancelada|Interrompida|Fechada|Faturada|Faturada Parcialmente|Aguardando Aprovação|Em Atendimento), type(Instalação|Cancelamento|Manutenção Corretiva|Manutenção Preventiva), from/to(data de abertura), q(texto no cliente). agrupar: status,type,month,defect,cause,solution.
 produtos — campos: description,brand,productGroup,unit,costPrice,salePrice,margin,active. filtros: brand(texto), group(texto), active(true|false), q(texto na descrição). agrupar: brand,group,active.
 estoque — saldo atual de cada produto em cada local (use para "itens de estoque", "saldo", "produtos sem saldo/negativos", "valor em estoque"). campos: description,brand,productGroup,location,unit,quantity,costPrice,salePrice,value. filtros: balance(negative|zero|positive), location(texto), brand(texto), group(texto), q(texto no produto). agrupar: location,brand,group.
+empresa — dados cadastrais da própria empresa (razão social, nome fantasia, CNPJ, endereço, telefone, e-mail, inscrições, regime tributário, CNAE, contador). sem filtros nem agrupamento.
 Obs.: "produtos" é o cadastro (preço, marca); "estoque" é a quantidade em estoque.`;
 
 const cache = new Map<string, { at: number; value: unknown }>();
@@ -160,14 +163,14 @@ export class ReportsAiService {
     if (hit && Date.now() - hit.at < 10 * 60_000) return hit.value; // mesmo pedido em 10 min: sem gastar IA de novo
 
     const today = new Date().toISOString().slice(0, 10);
-    const system = `Você transforma pedidos de relatório em uma consulta estruturada. Hoje é ${today}. Responda SÓ um JSON.\n${CATALOG}\nFormato: {"found":true,"dataset":"...","title":"título curto do relatório","filters":{...},"groupBy":"opcional","columns":["campos opcionais"],"sort":{"field":"campo","dir":"asc|desc"},"limit":número opcional}.\nSe o pedido NÃO puder ser atendido com esses dados (assunto que não existe neles), responda {"found":false,"message":"1 frase explicando que não encontrou essa informação e quais dados existem (pessoas, orçamentos, ordens de serviço, produtos, estoque)"}.\nDatas relativas (este mês, ano passado...) viram from/to em YYYY-MM-DD. Não invente filtros fora da lista.`;
+    const system = `Você transforma pedidos de relatório em uma consulta estruturada. Hoje é ${today}. Responda SÓ um JSON.\n${CATALOG}\nFormato: {"found":true,"dataset":"...","title":"título curto do relatório","filters":{...},"groupBy":"opcional","columns":["campos opcionais"],"sort":{"field":"campo","dir":"asc|desc"},"limit":número opcional}.\nSe o pedido NÃO puder ser atendido com esses dados (assunto que não existe neles), responda {"found":false,"message":"1 frase explicando que não encontrou essa informação e quais dados existem (pessoas, orçamentos, ordens de serviço, produtos, estoque, dados da empresa)"}.\nDatas relativas (este mês, ano passado...) viram from/to em YYYY-MM-DD. Não invente filtros fora da lista.`;
     const result = await this.ai.chat([{ role: 'system', content: system }, { role: 'user', content: text }], { json: true, temperature: 0, maxTokens: 350, feature: 'relatorio-personalizado', userId });
     let plan: Raw;
     try { plan = JSON.parse(result.text); } catch { throw new BadRequestException('Não consegui entender o pedido. Tente reescrever com mais detalhes.'); }
 
     let value: unknown;
     if (!plan.found || !DATASETS[plan.dataset]) {
-      value = { found: false, message: typeof plan.message === 'string' && plan.message ? plan.message : 'Não encontrei essa informação nos dados do sistema. Tenho pessoas, orçamentos, ordens de serviço, produtos e estoque.' };
+      value = { found: false, message: typeof plan.message === 'string' && plan.message ? plan.message : 'Não encontrei essa informação nos dados do sistema. Tenho pessoas, orçamentos, ordens de serviço, produtos, estoque e dados da empresa.' };
     } else {
       value = { found: true, report: await this.run(userId, text, plan) };
     }
@@ -214,7 +217,27 @@ export class ReportsAiService {
     return this.prisma.stockProduct.findMany({ where: { ...(f.brand ? { brand: ci(f.brand) } : {}), ...(f.group ? { productGroup: ci(f.group) } : {}), ...(f.active === true || f.active === false || f.active === 'true' || f.active === 'false' ? { isActive: f.active === true || f.active === 'true' } : {}), ...(f.q ? { description: ci(f.q) } : {}) }, orderBy: { description: 'asc' }, take: 5000 });
   }
 
+  private async company(userId: string, request: string, plan: Raw) {
+    const [c, user] = await Promise.all([this.prisma.companyProfile.findFirst(), this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } })]);
+    const d = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '');
+    const cnpj = d(c?.cnpj).replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    const cep = d(c?.postalCode).replace(/(\d{5})(\d{3})/, '$1-$2');
+    const phone = (v: string | null | undefined) => { const n = d(v); return n.length === 11 ? n.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3') : n.length === 10 ? n.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3') : (v ?? ''); };
+    const v = (x: string | null | undefined) => x || '-';
+    const address = c ? [`${c.street}, ${c.number}`, c.complement, c.district, `${c.city} - ${c.state}`, cep].filter(Boolean).join(' · ') : '-';
+    const rows: [string, string][] = c ? [['Razão social', v(c.legalName)], ['Nome fantasia', v(c.tradeName)], ['CNPJ', v(cnpj)], ['Endereço', address], ['Telefone', v(phone(c.phone))], ['E-mail', v(c.email)], ['Inscrição estadual', v(c.stateRegistration)], ['Inscrição municipal', v(c.municipalRegistration)], ['Inscrição substituta', v(c.substituteRegistration)], ['Regime tributário', v(c.taxRegime)], ['CNAE', v(c.cnae)], ['Contador', c.accountantEnabled ? `${v(c.accountantName)} · ${v(phone(c.accountantPhone))} · ${v(c.accountantEmail)} · CRC ${v(c.accountantCrc)}` : 'Não informado']] : [];
+    return {
+      title: String(plan.title || 'Dados da Empresa').slice(0, 80),
+      company: c?.legalName || c?.tradeName || 'Teclive',
+      generatedBy: user?.name ?? '',
+      generatedAt: new Date().toISOString(),
+      filters: [['Pedido:', request.length > 70 ? `${request.slice(0, 67)}...` : request], ['Dados:', 'Dados da empresa']],
+      sections: [{ title: 'Dados cadastrais da empresa', columns: [{ label: 'Informação', width: 200 }, { label: 'Valor', width: 489 }], rows, ...(rows.length ? {} : { note: 'Os dados da empresa ainda não foram preenchidos em Configurações.' }) }],
+    };
+  }
+
   private async run(userId: string, request: string, plan: Raw) {
+    if (plan.dataset === 'empresa') return this.company(userId, request, plan);
     const ds = DATASETS[plan.dataset];
     const filters: Raw = plan.filters && typeof plan.filters === 'object' ? plan.filters : {};
     const [rows, user, company] = await Promise.all([this.fetch(plan.dataset, filters), this.prisma.user.findUnique({ where: { id: userId }, select: { name: true } }), this.prisma.companyProfile.findFirst({ select: { legalName: true, tradeName: true } })]);
