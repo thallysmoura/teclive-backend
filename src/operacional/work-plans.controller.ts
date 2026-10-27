@@ -8,7 +8,7 @@ import { R2Service } from '../storage/r2.service.js';
 
 type Detail = { historico?: { dataHora: string; descricao: string; nomeUsuario: string; isLog: boolean }[] } & Record<string, unknown>;
 
-const KIND: Record<string, string> = { point: 'Ponto', ok: 'OK', x: 'Problema' };
+const KIND: Record<string, string> = { point: 'Ponto', ok: 'OK', x: 'Objeção' };
 
 /** Gestão de Obras: plantas da OS (Cloudflare R2), pontos marcados na imagem e histórico por data. */
 @Controller('service-orders/:id/plans')
