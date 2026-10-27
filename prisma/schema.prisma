@@ -827,6 +827,7 @@ model WorkPlan {
   userName  String      @db.VarChar(200)
   createdAt DateTime    @default(now())
   points    WorkPoint[]
+  strokes   WorkStroke[]
 
   @@index([orderId, createdAt(sort: Desc)])
   @@map("work_plans")
@@ -840,6 +841,7 @@ model WorkPoint {
   number      Int
   x           Float
   y           Float
+  kind        String    @default("point") @db.VarChar(8)
   description String    @db.VarChar(1000)
   done        Boolean   @default(false)
   userId      String?
@@ -849,4 +851,19 @@ model WorkPoint {
 
   @@index([planId])
   @@map("work_points")
+}
+
+/// Rabiscos feitos à mão sobre a planta (coordenadas de 0 a 1 em relação à imagem).
+model WorkStroke {
+  id        String   @id @default(uuid())
+  planId    String
+  plan      WorkPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  color     String   @db.VarChar(9)
+  points    Json
+  userId    String?
+  userName  String   @db.VarChar(200)
+  createdAt DateTime @default(now())
+
+  @@index([planId])
+  @@map("work_strokes")
 }

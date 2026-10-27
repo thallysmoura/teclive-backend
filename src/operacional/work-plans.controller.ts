@@ -8,6 +8,8 @@ import { R2Service } from '../storage/r2.service.js';
 
 type Detail = { historico?: { dataHora: string; descricao: string; nomeUsuario: string; isLog: boolean }[] } & Record<string, unknown>;
 
+const KIND: Record<string, string> = { point: 'Ponto', ok: 'OK', x: 'Problema' };
+
 /** Gestão de Obras: plantas da OS (Cloudflare R2), pontos marcados na imagem e histórico por data. */
 @Controller('service-orders/:id/plans')
 @UseGuards(JwtAuthGuard)
@@ -43,7 +45,7 @@ export class WorkPlansController {
   @Get()
   async list(@Param('id') id: string) {
     await this.order(id);
-    return this.prisma.workPlan.findMany({ where: { orderId: id }, orderBy: { createdAt: 'desc' }, include: { points: { orderBy: { number: 'asc' } } } });
+    return this.prisma.workPlan.findMany({ where: { orderId: id }, orderBy: { createdAt: 'desc' }, include: { points: { orderBy: { number: 'asc' } }, strokes: { orderBy: { createdAt: 'asc' } } } });
   }
 
   @Post()
@@ -63,11 +65,11 @@ export class WorkPlansController {
     const title = String(b.title ?? b.fileName ?? 'Planta').trim().slice(0, 200) || 'Planta';
     const plan = await this.prisma.workPlan.create({ data: { orderId: id, title, fileUrl: this.storage.publicUrl(key), userId: user.id, userName: user.name } });
     await this.announce(o, user, `Planta '${title}' anexada em Gestão de Obras por '${user.name}'`, `Nova planta na OS ${this.fmt(o.number)}`, `${user.name} anexou a planta "${title}".`);
-    return { ...plan, points: [] };
+    return { ...plan, points: [], strokes: [] };
   }
 
   @Post(':planId/points')
-  async addPoint(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { x?: number; y?: number; description?: string }) {
+  async addPoint(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { x?: number; y?: number; description?: string; kind?: string }) {
     const user = await this.me(req);
     const o = await this.order(id);
     const plan = await this.prisma.workPlan.findFirst({ where: { id: planId, orderId: id } });
@@ -76,10 +78,34 @@ export class WorkPlansController {
     if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) throw new BadRequestException('Ponto fora da imagem.');
     if (!description) throw new BadRequestException('Descreva o ponto marcado.');
     const last = await this.prisma.workPoint.aggregate({ where: { planId }, _max: { number: true } });
-    const point = await this.prisma.workPoint.create({ data: { planId, orderId: id, number: (last._max.number ?? 0) + 1, x, y, description, userId: user.id, userName: user.name } });
+    const point = await this.prisma.workPoint.create({ data: { planId, orderId: id, number: (last._max.number ?? 0) + 1, x, y, kind: ['ok', 'x'].includes(String(b.kind)) ? String(b.kind) : 'point', description, userId: user.id, userName: user.name } });
     const snippet = description.length > 120 ? `${description.slice(0, 117)}...` : description;
-    await this.announce(o, user, `Ponto ${point.number} marcado na planta '${plan.title}' por '${user.name}': ${snippet}`, `Novo ponto na OS ${this.fmt(o.number)}`, `${user.name} marcou o ponto ${point.number} na planta "${plan.title}": ${snippet}`);
+    await this.announce(o, user, `${KIND[point.kind] ?? 'Ponto'} ${point.number} marcado na planta '${plan.title}' por '${user.name}': ${snippet}`, `Novo ponto na OS ${this.fmt(o.number)}`, `${user.name} marcou ${(KIND[point.kind] ?? 'Ponto').toLowerCase()} ${point.number} na planta "${plan.title}": ${snippet}`);
     return point;
+  }
+
+  @Post(':planId/strokes')
+  async addStroke(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { color?: string; points?: number[][] }) {
+    const user = await this.me(req);
+    const o = await this.order(id);
+    const plan = await this.prisma.workPlan.findFirst({ where: { id: planId, orderId: id } });
+    if (!plan) throw new NotFoundException('Planta não encontrada.');
+    const color = /^#[0-9a-fA-F]{6}$/.test(String(b.color)) ? String(b.color) : '#E11D48';
+    const pts = (Array.isArray(b.points) ? b.points : []).slice(0, 800).filter((p) => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === 'number' && n >= 0 && n <= 1)).map((p) => [Math.round(p[0] * 10000) / 10000, Math.round(p[1] * 10000) / 10000]);
+    if (pts.length < 2) throw new BadRequestException('Rabisco vazio.');
+    const stroke = await this.prisma.workStroke.create({ data: { planId, color, points: pts, userId: user.id, userName: user.name } });
+    await this.announce(o, user, `Rabisco desenhado na planta '${plan.title}' por '${user.name}'`, `Novo rabisco na OS ${this.fmt(o.number)}`, `${user.name} desenhou na planta "${plan.title}".`);
+    return stroke;
+  }
+
+  @Delete(':planId/strokes/:strokeId')
+  async removeStroke(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Param('strokeId') strokeId: string) {
+    const user = await this.me(req);
+    const st = await this.prisma.workStroke.findFirst({ where: { id: strokeId, planId, plan: { orderId: id } } });
+    if (!st) throw new NotFoundException('Rabisco não encontrado.');
+    if (user.role !== 'ADMIN' && st.userId !== user.id) throw new ForbiddenException('Você só pode desfazer os seus próprios rabiscos.');
+    await this.prisma.workStroke.delete({ where: { id: strokeId } });
+    return { ok: true };
   }
 
   @Put(':planId/points/:pointId')
