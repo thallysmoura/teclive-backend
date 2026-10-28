@@ -882,6 +882,7 @@ model NewsPost {
   updatedAt     DateTime      @updatedAt
   targets       NewsTarget[]
   comments      NewsComment[]
+  views         NewsView[]
 
   @@index([createdAt(sort: Desc)])
   @@map("news_posts")
@@ -908,4 +909,15 @@ model NewsComment {
 
   @@index([postId, createdAt])
   @@map("news_comments")
+}
+
+/// Quem já abriu (visualizou) a notícia.
+model NewsView {
+  postId   String
+  post     NewsPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId   String
+  viewedAt DateTime @default(now())
+
+  @@id([postId, userId])
+  @@map("news_views")
 }

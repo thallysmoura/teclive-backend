@@ -57,7 +57,11 @@ export class NewsController {
     const avatar = new Map(authors.map((a) => [a.id, a.avatarUrl]));
     const names = u.role === 'ADMIN' ? await this.prisma.user.findMany({ where: { id: { in: posts.flatMap((p) => p.targets.map((t) => t.userId)) } }, select: { id: true, name: true } }) : [];
     const nameOf = new Map(names.map((n) => [n.id, n.name]));
+    const views = await this.prisma.newsView.findMany({ where: { postId: { in: posts.map((p) => p.id) } }, orderBy: { viewedAt: 'asc' } });
+    const viewers = await this.prisma.user.findMany({ where: { id: { in: [...new Set(views.map((v) => v.userId))] } }, select: { id: true, name: true, avatarUrl: true } });
+    const who = new Map(viewers.map((x) => [x.id, x]));
     return posts.map((p) => ({
+      viewers: views.filter((v) => v.postId === p.id && who.has(v.userId)).map((v) => ({ id: v.userId, name: who.get(v.userId)!.name, avatarUrl: who.get(v.userId)!.avatarUrl, at: v.viewedAt })),
       id: p.id, title: p.title, body: p.body, imageUrl: p.imageUrl, allowComments: p.allowComments, toAll: p.toAll, authorName: p.authorName,
       authorAvatar: p.authorId ? avatar.get(p.authorId) ?? null : null, createdAt: p.createdAt, commentCount: p._count.comments,
       targets: u.role === 'ADMIN' ? p.targets.map((t) => ({ id: t.userId, name: nameOf.get(t.userId) ?? 'Usuário' })) : undefined,
@@ -142,6 +146,15 @@ export class NewsController {
     const p = await this.prisma.newsPost.findUnique({ where: { id }, include: { targets: true } });
     if (!p || !this.canSee(u, p)) throw new NotFoundException('Notícia não encontrada.');
     return p;
+  }
+
+  /** Registra que a pessoa abriu a notícia (uma vez por pessoa). */
+  @Post(':id/view')
+  async view_(@Req() req: Request, @Param('id') id: string) {
+    const u = await this.me(req);
+    await this.visiblePost(u, id);
+    await this.prisma.newsView.upsert({ where: { postId_userId: { postId: id, userId: u.id } }, create: { postId: id, userId: u.id }, update: {} });
+    return { id: u.id, name: u.name, avatarUrl: u.avatarUrl, at: new Date().toISOString() };
   }
 
   @Get(':id/comments')
