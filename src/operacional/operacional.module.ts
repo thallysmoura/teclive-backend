@@ -5,10 +5,11 @@ import { OpsModule } from '../ops/ops.module.js';
 import { R2Service } from '../storage/r2.service.js';
 import { ServiceOrdersService } from './service-orders.service.js';
 import { WorkPlansController } from './work-plans.controller.js';
+import { OsFoldersController } from './os-folders.controller.js';
 
 @Module({
   imports: [OpsModule],
-  controllers: [LookupsController, ServiceOrdersController, WorkPlansController],
+  controllers: [LookupsController, ServiceOrdersController, WorkPlansController, OsFoldersController],
   providers: [LookupsService, ServiceOrdersService, R2Service],
   exports: [ServiceOrdersService],
 })

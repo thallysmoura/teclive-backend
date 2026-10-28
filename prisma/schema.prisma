@@ -921,3 +921,27 @@ model NewsView {
   @@id([postId, userId])
   @@map("news_views")
 }
+
+/// Pastas (nome livre) criadas pelos administradores para organizar os anexos de uma OS.
+model OsFolder {
+  id        String         @id @default(uuid())
+  orderId   String
+  name      String         @db.VarChar(80)
+  createdBy String         @db.VarChar(200)
+  createdAt DateTime       @default(now())
+  items     OsFolderItem[]
+
+  @@index([orderId])
+  @@map("os_folders")
+}
+
+model OsFolderItem {
+  orderId      String
+  attachmentId String   @db.VarChar(40)
+  folderId     String
+  folder       OsFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@id([orderId, attachmentId])
+  @@index([folderId])
+  @@map("os_folder_items")
+}
