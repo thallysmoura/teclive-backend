@@ -86,7 +86,7 @@ export class UsersService {
   }
 
   permissionsCatalog() {
-    return this.prisma.sidebarItem.findMany({ where: { AND: [{ href: { not: null } }, { href: { notIn: ADMIN_ONLY_HREFS } }], key: { not: 'ajuda' } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
+    return this.prisma.sidebarItem.findMany({ where: { AND: [{ href: { not: null } }, { href: { notIn: ADMIN_ONLY_HREFS } }], key: { notIn: ['ajuda', 'mural'] } }, select: { key: true, label: true }, orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
   }
 
   private async validatePermissions(permissions: string[]) {

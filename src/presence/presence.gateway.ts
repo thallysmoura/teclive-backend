@@ -31,6 +31,11 @@ export class PresenceGateway implements OnGatewayInit, OnGatewayConnection, OnGa
     this.server?.to('admins').emit('notification:new');
   }
 
+  /** Avisa pessoas específicas para atualizarem o sino de notificações na hora. */
+  notifyUsers(ids: string[]) {
+    for (const id of ids) this.server?.to(`user:${id}`).emit('notification:new');
+  }
+
   /** Envia um evento operacional só a quem está com o Painel de Acompanhamento aberto. */
   emitOps(event: unknown) {
     this.server?.to('ops-panel').emit('ops:event', event);
