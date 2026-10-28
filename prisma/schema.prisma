@@ -873,6 +873,7 @@ model NewsPost {
   id            String        @id @default(uuid())
   title         String        @db.VarChar(160)
   body          String        @db.Text
+  imageUrl      String?       @db.VarChar(500)
   allowComments Boolean       @default(true)
   toAll         Boolean       @default(true)
   authorId      String?
