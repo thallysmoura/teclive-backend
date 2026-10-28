@@ -11,13 +11,15 @@ export class NavigationService {
     const user = await this.prisma.user.findUnique({ where: { id }, select: { role: true, permissions: true } });
     if (!user) throw new UnauthorizedException();
     const items = await this.prisma.sidebarItem.findMany({ orderBy: [{ sortOrder: 'asc' }, { key: 'asc' }] });
+    const news = await this.prisma.newsPost.count({ where: user.role === 'ADMIN' ? {} : { OR: [{ toAll: true }, { targets: { some: { userId: id } } }] } });
+    const withNews = <T extends { key: string }>(item: T) => (item.key === 'mural' && news > 0 ? { ...item, badge: news } : item);
     if (user.role === 'ADMIN') {
       const [totalUsers, pendingSuggestions] = await Promise.all([this.prisma.user.count(), this.prisma.suggestion.count({ where: { status: 'NOVA' } })]);
-      return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item.key === 'envios_melhorias' ? { ...item, badge: pendingSuggestions } : item);
+      return items.filter((item) => item.key !== 'log_acesso' || user.permissions.includes('log_acesso')).map(withNews).map((item) => item.key === 'controle_acesso' ? { ...item, badge: totalUsers } : item.key === 'envios_melhorias' ? { ...item, badge: pendingSuggestions } : item);
     }
     const visible = new Set(items.filter((item) => user.permissions.includes(item.key)).map((item) => item.parentKey).filter(Boolean));
     return items.filter((item) => item.key === 'ajuda' || item.key === 'mural' || (['log_acesso', 'dados_empresa'].includes(item.key) && user.permissions.includes(item.key)) || (item.section === 'main' && (user.permissions.includes(item.key) || visible.has(item.key))))
-      .map((item) => visible.has(item.key) && !user.permissions.includes(item.key) ? { ...item, href: null, embedUrl: null } : item);
+      .map((item) => visible.has(item.key) && !user.permissions.includes(item.key) ? { ...item, href: null, embedUrl: null } : item).map(withNews);
   }
 
   private async availableHref(label: string, key?: string): Promise<string> {
