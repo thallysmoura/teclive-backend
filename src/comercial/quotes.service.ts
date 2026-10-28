@@ -42,7 +42,8 @@ export type QuoteInput = {
   personId?: string; title?: string; validUntil?: string; sellerName?: string; contactName?: string; contactEmail?: string; contactPhone?: string;
   technicalSheet?: string; notes?: string; showNotes?: boolean; address?: Prisma.InputJsonValue;
 };
-export type QuoteItemInput = { kind?: string; description?: string; identifier?: string; unit?: string; quantity?: number; unitValue?: number; discountValue?: number; discountPercent?: number; cost?: number; rental?: boolean };
+export type QuoteItemInput = { kind?: string; description?: string; identifier?: string; unit?: string; quantity?: number; unitValue?: number; discountValue?: number; discountPercent?: number; cost?: number; rental?: boolean; groupName?: string | null };
+const groupOf = (v: unknown) => String(v ?? '').trim().replace(/\s+/g, ' ').slice(0, 60) || null;
 
 @Injectable()
 export class QuotesService {
@@ -239,7 +240,7 @@ export class QuotesService {
     await this.prisma.quoteItem.create({
       data: {
         quoteId: id, kind, description, identifier: input.identifier?.trim() || null, unit: input.unit ?? 'UN', quantity, unitValue, discountValue,
-        discountPercent: gross ? Math.round((discountValue / gross) * 10000) / 100 : 0, total: gross - discountValue, cost: Number(input.cost ?? 0), rental: !!input.rental, sortOrder: (last._max.sortOrder ?? 0) + 1,
+        discountPercent: gross ? Math.round((discountValue / gross) * 10000) / 100 : 0, total: gross - discountValue, cost: Number(input.cost ?? 0), rental: !!input.rental, groupName: groupOf(input.groupName), sortOrder: (last._max.sortOrder ?? 0) + 1,
       },
     });
     await this.prisma.quotePayment.updateMany({ where: { quoteId: id }, data: { selected: false } });
@@ -256,7 +257,7 @@ export class QuotesService {
     if (discountValue > gross) throw new BadRequestException('O desconto não pode ser maior que o valor do item.');
     await this.prisma.quoteItem.update({
       where: { id: itemId },
-      data: { quantity, unitValue, discountValue, discountPercent: gross ? Math.round((discountValue / gross) * 10000) / 100 : 0, total: gross - discountValue, rental: input.rental ?? item.rental },
+      data: { quantity, unitValue, discountValue, discountPercent: gross ? Math.round((discountValue / gross) * 10000) / 100 : 0, total: gross - discountValue, rental: input.rental ?? item.rental, ...(input.groupName !== undefined ? { groupName: groupOf(input.groupName) } : {}) },
     });
     await this.prisma.quotePayment.updateMany({ where: { quoteId: id }, data: { selected: false } });
     return this.get(id);

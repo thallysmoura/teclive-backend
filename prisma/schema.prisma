@@ -351,6 +351,7 @@ model QuoteItem {
   total           Decimal  @db.Decimal(14, 2)
   cost            Decimal  @default(0) @db.Decimal(14, 2)
   rental          Boolean  @default(false)
+  groupName       String?  @db.VarChar(60)
   sortOrder       Int      @default(0)
 
   @@map("quote_items")
