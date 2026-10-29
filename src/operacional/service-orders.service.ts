@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash, randomUUID } from 'node:crypto';
+import { pendingBillingRows } from '../billing/billing-rows.js';
 import { OpsService } from '../ops/ops.service.js';
 import { R2Service } from '../storage/r2.service.js';
 import { Prisma, type ServiceOrder } from '@prisma/client';
@@ -492,9 +493,12 @@ export class ServiceOrdersService {
     const quotes = won.filter((q) => (covered.get(q.number) ?? 0) < q._count.items);
     const sums = await this.prisma.quoteItem.groupBy({ by: ['quoteId'], _sum: { total: true }, where: { quoteId: { in: quotes.map((q) => q.id) }, kind: { not: 'RECURRING' } } });
     const quoteTotal = new Map(sums.map((r) => [r.quoteId, asNumber(r._sum.total)]));
-    const card = (o: ServiceOrder) => ({ id: o.id, number: o.number, personName: o.personName, openedAt: o.openedAt, scheduleEnd: o.scheduleEnd, typeLabel: OS_TYPES[o.type] ?? '—', total: money(asNumber(o.totalServices) + asNumber(o.totalProducts)), status: this.effective(o) });
+    const card = (o: ServiceOrder) => ({ id: o.id, number: o.number, personName: o.personNickname || o.personName, openedAt: o.openedAt, scheduleEnd: o.scheduleEnd, typeLabel: OS_TYPES[o.type] ?? '—', total: money(asNumber(deliveryColumn.has(o.id) ? o.totalProducts : asNumber(o.totalServices) + asNumber(o.totalProducts))), status: this.effective(o) });
     const byPending = (kind: number) => open.filter((o) => o.status !== 7 && this.pending(o).some((p) => p.tipoPendencia === kind));
+    const deliveryColumn = new Set(byPending(2).map((o) => o.id));
     const closable = open.filter((o) => OPEN.includes(o.status) && this.pending(o).length === 0);
+    const billing = await pendingBillingRows(this.prisma);
+    const billCard = (r: (typeof billing)[number]) => ({ id: r.key, orderId: r.orderId, number: r.number, personName: r.personName, openedAt: r.openedAt, closedAt: r.closedAt, typeLabel: r.typeLabel, total: money(r.value), kind: r.kind, motivo: r.motivo });
     return [
       { key: 'release', title: 'Liberação de Orçamento', kind: 'quote', cards: [] as unknown[] },
       { key: 'contract', title: 'Orçamentos Pendentes de Contrato', kind: 'quote', cards: [] as unknown[] },
@@ -503,6 +507,9 @@ export class ServiceOrdersService {
       { key: 'withdraw', title: 'OS Aguardando Retirada de Equipamentos', kind: 'os', cards: byPending(3).map(card) },
       { key: 'approval', title: 'OS Aguardando Aprovação', kind: 'os', cards: open.filter((o) => o.status === 7).map(card) },
       { key: 'closing', title: 'OS Aguardando Fechamento', kind: 'os', cards: closable.map(card) },
+      { key: 'billServices', title: 'Faturamento de Serviços da OS', kind: 'bill', cards: billing.filter((r) => r.kind === 'S').map(billCard) },
+      { key: 'billProducts', title: 'Faturamento de Produtos da OS', kind: 'bill', cards: billing.filter((r) => r.kind === 'P').map(billCard) },
+      { key: 'install', title: 'Entrega da Instalação', kind: 'os', cards: [] as unknown[] },
     ];
   }
 

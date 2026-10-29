@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { Prisma } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { flagItems, pendingBillingRows, unflagInvoice, itemsOf } from './billing-rows.js';
 
 const num = (v: unknown) => Number(v ?? 0);
 const str = (v: unknown, max: number) => String(v ?? '').trim().slice(0, max);
@@ -94,18 +95,21 @@ export class BillingController {
     if (inv.status === 'CANCELADA') throw new BadRequestException('A fatura já está cancelada.');
     if (inv.nfseNumber || inv.nfeNumber) throw new BadRequestException('Esta fatura tem nota fiscal emitida. Cancele a nota antes de cancelar a fatura.');
     await this.prisma.invoice.update({ where: { id }, data: { status: 'CANCELADA', titleGenerated: false } });
-    if (inv.origin === 'OS' && inv.originRef) await this.syncOrderStatus(Number(inv.originRef));
+    if (inv.origin === 'OS' && inv.originRef) {
+      const o = await this.prisma.serviceOrder.findFirst({ where: { number: Number(inv.originRef) }, select: { id: true, detail: true } });
+      if (o) { unflagInvoice(o.detail, inv.number); await this.prisma.serviceOrder.update({ where: { id: o.id }, data: { detail: o.detail as object } }); }
+      await this.syncOrderStatus(Number(inv.originRef));
+    }
     return { ok: true };
   }
 
-  /** Mantém a situação da OS coerente com as faturas ativas dela (Fechada, Faturada parcialmente ou Faturada). */
+  /** Mantém a situação da OS coerente com os itens faturados (Fechada, Faturada parcialmente ou Faturada). */
   private async syncOrderStatus(number: number) {
-    const o = await this.prisma.serviceOrder.findFirst({ where: { number }, select: { id: true, status: true, totalServices: true, totalProducts: true } });
+    const o = await this.prisma.serviceOrder.findFirst({ where: { number }, select: { id: true, status: true, detail: true } });
     if (!o || ![4, 5, 6].includes(o.status)) return;
-    const active = await this.prisma.invoice.findMany({ where: { origin: 'OS', originRef: String(number), status: 'FATURADA' }, select: { kind: true } });
-    const needS = num(o.totalServices) > 0, needP = num(o.totalProducts) > 0;
-    const hasS = active.some((i) => i.kind === 'S'), hasP = active.some((i) => i.kind === 'P');
-    const status = (needS ? hasS : true) && (needP ? hasP : true) && active.length > 0 ? 5 : active.length > 0 ? 6 : 4;
+    const billable = [...itemsOf(o.detail, 'S').filter((i) => !i.motivoNaoCobrar), ...itemsOf(o.detail, 'P').filter((i) => !i.motivoNaoCobrar)].filter((i) => num(i.valores?.total) > 0);
+    const done = billable.filter((i) => i.faturado).length;
+    const status = billable.length === 0 || done === billable.length ? 5 : done > 0 ? 6 : 4;
     if (status !== o.status) await this.prisma.serviceOrder.update({ where: { id: o.id }, data: { status } });
   }
 
@@ -221,31 +225,25 @@ export class BillingController {
       const rows = await this.prisma.invoice.findMany({ where: { origin: 'OS', status: 'FATURADA', ...(q.person ? { personName: { contains: q.person, mode: 'insensitive' } } : {}), ...(q.billType === 'P' ? { kind: 'P' } : q.billType === 'S' ? { kind: 'S' } : {}) }, orderBy: { number: 'desc' }, take: 200 });
       return rows.map((r) => ({ key: r.id, invoiceId: r.id, invoiceNumber: r.number, number: Number(r.originRef ?? 0), personName: r.personName, kind: r.kind, value: num(r.total), address: '' }));
     }
-    const where: Prisma.ServiceOrderWhereInput = { status: { in: [4, 6] }, ...(q.from || q.to ? { closedAt: range(q.from, q.to) } : {}), ...(q.osType ? { type: num(q.osType) } : {}), ...(q.person ? { personName: { contains: q.person, mode: 'insensitive' } } : {}) };
-    const orders = await this.prisma.serviceOrder.findMany({ where, orderBy: { closedAt: 'desc' }, select: { id: true, number: true, personName: true, address: true, totalServices: true, totalProducts: true } });
-    const invoiced = await this.prisma.invoice.findMany({ where: { origin: 'OS', status: 'FATURADA', originRef: { in: orders.map((o) => String(o.number)) } }, select: { originRef: true, kind: true } });
-    const has = new Set(invoiced.map((i) => `${i.originRef}:${i.kind}`));
-    const rows: { key: string; orderId: string; number: number; personName: string; address: string; kind: 'S' | 'P'; value: number }[] = [];
-    for (const o of orders) {
-      const base = { orderId: o.id, number: o.number, personName: o.personName, address: addressOf(o.address) };
-      if (num(o.totalServices) > 0 && !has.has(`${o.number}:S`) && q.billType !== 'P') rows.push({ ...base, key: `${o.id}:S`, kind: 'S', value: num(o.totalServices) });
-      if (num(o.totalProducts) > 0 && !has.has(`${o.number}:P`) && q.billType !== 'S') rows.push({ ...base, key: `${o.id}:P`, kind: 'P', value: num(o.totalProducts) });
-    }
-    return rows;
+    const rows = await pendingBillingRows(this.prisma, { from: day(q.from), to: day(q.to, true), person: q.person, osType: q.osType ? num(q.osType) : undefined });
+    return rows.filter((r) => !q.billType || r.kind === q.billType).map((r) => ({ ...r, address: addressOf(r.address) }));
   }
 
   @Post('os/invoice')
-  async invoiceOrder(@Req() req: Request, @Body() b: { orderId?: string; kind?: string }) {
+  async invoiceOrder(@Req() req: Request, @Body() b: { orderId?: string; kind?: string; motivo?: number }) {
     const u = await this.me(req);
-    const o = await this.prisma.serviceOrder.findUnique({ where: { id: String(b.orderId ?? '') }, select: { id: true, number: true, status: true, personId: true, personName: true, closedAt: true, totalServices: true, totalProducts: true, defectName: true } });
+    const o = await this.prisma.serviceOrder.findUnique({ where: { id: String(b.orderId ?? '') }, select: { id: true, number: true, status: true, personId: true, personName: true, closedAt: true, detail: true, defectName: true } });
     if (!o) throw new NotFoundException('OS não encontrada.');
-    if (![4, 6].includes(o.status)) throw new BadRequestException('Somente OS fechadas podem ser faturadas.');
-    const kind = b.kind === 'P' ? 'P' : 'S';
-    const value = num(kind === 'P' ? o.totalProducts : o.totalServices);
-    if (!(value > 0)) throw new BadRequestException('Esta OS não tem valor a faturar neste tipo.');
-    if (await this.prisma.invoice.findFirst({ where: { origin: 'OS', originRef: String(o.number), kind, status: 'FATURADA' } })) throw new BadRequestException('Esta OS já foi faturada neste tipo.');
+    if (![4, 5, 6].includes(o.status)) throw new BadRequestException('Somente OS fechadas podem ser faturadas.');
+    const kind = b.kind === 'P' ? 'P' : 'S', motivo = kind === 'P' ? num(b.motivo) : 0;
+    const row = (await pendingBillingRows(this.prisma)).find((r) => r.orderId === o.id && r.kind === kind && r.motivo === motivo);
+    if (!row) throw new BadRequestException('Não há itens a faturar nesta OS para este tipo (ou já foram faturados).');
     const now = new Date();
-    const inv = await this.prisma.invoice.create({ data: { number: await this.nextNumber(), kind, origin: 'OS', originRef: String(o.number), personId: o.personId, personName: o.personName, competence: compOf(o.closedAt ?? now), registeredAt: now, createdBy: u.name, total: value, titleGenerated: true, description: o.defectName } });
+    const number = await this.nextNumber();
+    const detail = o.detail as object;
+    flagItems(detail, kind, motivo, number);
+    const inv = await this.prisma.invoice.create({ data: { number, kind, origin: 'OS', originRef: String(o.number), personId: o.personId, personName: o.personName, competence: compOf(o.closedAt ?? now), registeredAt: now, createdBy: u.name, total: row.value, titleGenerated: motivo === 0, description: o.defectName } });
+    await this.prisma.serviceOrder.update({ where: { id: o.id }, data: { detail } });
     await this.syncOrderStatus(o.number);
     return { id: inv.id, number: inv.number };
   }
