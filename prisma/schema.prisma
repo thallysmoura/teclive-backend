@@ -1024,3 +1024,99 @@ model PurchaseNote {
 
   @@map("purchase_notes")
 }
+
+/// Financeiro: contas a receber/pagar, caixa, categorias, centros de resultado, cobrança e operações.
+model CashAccount {
+  id        String         @id @default(uuid())
+  name      String         @db.VarChar(120)
+  type      String         @default("Conta Corrente") @db.VarChar(40)
+  isActive  Boolean        @default(true)
+  opening   Decimal        @default(0) @db.Decimal(14, 2)
+  createdAt DateTime       @default(now())
+  movements CashMovement[]
+
+  @@map("cash_accounts")
+}
+
+model FinCategory {
+  id        String  @id @default(uuid())
+  kind      String  @db.VarChar(1)
+  name      String  @db.VarChar(160)
+  level     Int
+  parentId  String?
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  @@index([kind, parentId])
+  @@map("fin_categories")
+}
+
+model FinAccount {
+  id            String   @id @default(uuid())
+  kind          String   @db.VarChar(1)
+  number        String?  @db.VarChar(12)
+  dueDate       DateTime
+  personName    String   @db.VarChar(250)
+  installment   String?  @db.VarChar(10)
+  description   String   @db.VarChar(300)
+  value         Decimal  @db.Decimal(14, 2)
+  paidValue     Decimal? @db.Decimal(14, 2)
+  status        String   @default("ABERTA") @db.VarChar(10)
+  paymentMethod String?  @db.VarChar(80)
+  cashAccountId String?
+  settledAt     DateTime?
+  categoryId    String?
+  invoiceNumber Int?
+  note          String?  @db.VarChar(300)
+  createdAt     DateTime @default(now())
+
+  @@index([kind, dueDate(sort: Desc)])
+  @@map("fin_accounts")
+}
+
+model CashMovement {
+  id            String      @id @default(uuid())
+  cashAccountId String
+  cashAccount   CashAccount @relation(fields: [cashAccountId], references: [id], onDelete: Cascade)
+  date          DateTime
+  personName    String      @db.VarChar(250)
+  description   String      @db.VarChar(400)
+  value         Decimal     @db.Decimal(14, 2)
+  accountId     String?
+  createdBy     String      @default("") @db.VarChar(200)
+  createdAt     DateTime    @default(now())
+
+  @@index([cashAccountId, date(sort: Desc)])
+  @@map("cash_movements")
+}
+
+model ResultCenter {
+  id       String  @id @default(uuid())
+  name     String  @db.VarChar(160)
+  isActive Boolean @default(true)
+
+  @@map("result_centers")
+}
+
+model CollectionLog {
+  id         String   @id @default(uuid())
+  personName String   @db.VarChar(250)
+  note       String   @db.VarChar(500)
+  userName   String   @db.VarChar(200)
+  total      Decimal  @default(0) @db.Decimal(14, 2)
+  createdAt  DateTime @default(now())
+
+  @@map("collection_logs")
+}
+
+model FinOperation {
+  id          String   @id @default(uuid())
+  type        String   @db.VarChar(20)
+  personName  String   @db.VarChar(250)
+  description String   @db.VarChar(400)
+  total       Decimal  @db.Decimal(14, 2)
+  userName    String   @db.VarChar(200)
+  createdAt   DateTime @default(now())
+
+  @@map("fin_operations")
+}
