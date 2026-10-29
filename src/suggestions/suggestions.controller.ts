@@ -101,6 +101,18 @@ export class SuggestionsController {
     res.send(Buffer.from(m[2], 'base64'));
   }
 
+  /** Autor ou administrador complementa/corrige o texto da sugestão. */
+  @Patch(':id')
+  async edit(@Req() req: Request, @Param('id') id: string, @Body() body: { description?: string }) {
+    const description = typeof body.description === 'string' ? body.description.trim().slice(0, 4000) : '';
+    if (description.length < 10) throw new BadRequestException('Descreva a melhoria com um pouco mais de detalhe.');
+    const current = await this.prisma.suggestion.findUnique({ where: { id }, select: { userId: true } });
+    if (!current) throw new NotFoundException('Sugestão não encontrada.');
+    if (current.userId !== (req.user as { id: string }).id && !(await this.isAdmin(req))) throw new ForbiddenException('Só quem enviou ou um administrador pode editar.');
+    await this.prisma.suggestion.update({ where: { id }, data: { description, title: clean(description.split(/\n\nObservações/)[0], 80) || 'Sugestão de melhoria' } });
+    return { ok: true };
+  }
+
   @Patch(':id/status')
   async setStatus(@Req() req: Request, @Param('id') id: string, @Body() body: { status?: string }) {
     if (!(await this.isAdmin(req))) throw new ForbiddenException('Apenas administradores alteram o andamento.');
