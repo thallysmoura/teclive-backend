@@ -60,6 +60,7 @@ export class ServiceOrdersController {
   @Get('operations') operations() { return this.service.operations(); }
   @Get(':id') get(@Param('id') id: string) { return this.service.get(id); }
   @Post() async create(@Req() req: Request, @Body() b: OsInput) { return this.service.create(await this.user(req), b); }
+  @Put(':id/technical-sheet') async technicalSheet(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string | null }) { return this.service.setTechnicalSheet(await this.me(req), id, typeof b.text === 'string' ? b.text : null); }
   @Put(':id') async update(@Req() req: Request, @Param('id') id: string, @Body() b: OsInput) { return this.service.update(await this.user(req), id, b); }
   @Get(':id/comments') comments(@Param('id') id: string) { return this.service.comments(id); }
   @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string; fileIds?: string[] }) { return this.service.comment(await this.me(req), id, b ?? {}); }

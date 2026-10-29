@@ -314,6 +314,14 @@ export class ServiceOrdersService {
     return this.out(await this.touch(id, {}, d, { user: user.name, text: `Comentário excluído por '${user.name}'` }));
   }
 
+  /** Administrador edita ou apaga a ficha técnica da OS (em qualquer situação). */
+  async setTechnicalSheet(user: { name: string; role: string }, id: string, text: string | null) {
+    if (user.role !== 'ADMIN') throw new ForbiddenException('Apenas administradores alteram a ficha técnica.');
+    const o = await this.load(id);
+    const value = text === null ? null : text.trim().slice(0, 4000) || null;
+    return this.out(await this.touch(id, { technicalSheet: value }, o.detail as Detail, { user: user.name, text: value === null ? `Ficha técnica excluída por '${user.name}'` : `Ficha técnica editada por '${user.name}'` }));
+  }
+
   /** Só os comentários (para acompanhar em tempo real sem recarregar a OS toda). */
   async comments(id: string) {
     const o = await this.load(id);
