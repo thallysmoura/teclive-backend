@@ -191,13 +191,18 @@ export class WorkPlansController {
   }
 
   @Put(':planId/points/:pointId')
-  async updatePoint(@Req() req: Request, @Param('id') id: string, @Param('pointId') pointId: string, @Body() b: { description?: string; done?: boolean }) {
+  async updatePoint(@Req() req: Request, @Param('id') id: string, @Param('pointId') pointId: string, @Body() b: { description?: string; done?: boolean; x?: number; y?: number }) {
     const user = await this.me(req);
     const o = await this.order(id);
     const p = await this.prisma.workPoint.findFirst({ where: { id: pointId, orderId: id }, include: { plan: { select: { title: true } } } });
     if (!p) throw new NotFoundException('Ponto não encontrado.');
     if (user.role !== 'ADMIN' && p.userId !== user.id) throw new ForbiddenException('Você só pode alterar os seus próprios pontos.');
-    const data: { description?: string; done?: boolean } = {};
+    const data: { description?: string; done?: boolean; x?: number; y?: number } = {};
+    if (b.x !== undefined || b.y !== undefined) {
+      const x = Number(b.x), y = Number(b.y);
+      if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) throw new BadRequestException('Posição fora da imagem.');
+      data.x = x; data.y = y;
+    }
     if (b.description !== undefined) { const d = String(b.description).trim().slice(0, 1000); if (!d) throw new BadRequestException('Descreva o ponto.'); data.description = d; }
     if (typeof b.done === 'boolean') data.done = b.done;
     const upd = await this.prisma.workPoint.update({ where: { id: pointId }, data });
