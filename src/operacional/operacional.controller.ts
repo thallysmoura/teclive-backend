@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Delete, Get, Param, ParseIntPipe, Post, Put, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -70,7 +71,7 @@ export class ServiceOrdersController {
     if (!Buffer.isBuffer(body)) throw new BadRequestException('Envie um vídeo MP4, WEBM ou MOV.');
     return this.service.uploadVideo(await this.me(req), id, { fileName: decodeURIComponent(String(req.headers['x-file-name'] ?? 'video')), mimeType: req.headers['content-type'], data: body });
   }
-  @Get(':id/files/:fileId') async file(@Param('id') id: string, @Param('fileId') fileId: string, @Res() res: Response) {
+  @SkipThrottle() @Get(':id/files/:fileId') async file(@Param('id') id: string, @Param('fileId') fileId: string, @Res() res: Response) {
     const { fileName, mimeType, data } = await this.service.file(id, fileId);
     res.setHeader('Content-Type', mimeType);
     res.setHeader('Cache-Control', 'private, max-age=86400');
