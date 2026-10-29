@@ -150,18 +150,19 @@ export class WorkPlansController {
   }
 
   @Post(':planId/points')
-  async addPoint(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { x?: number; y?: number; description?: string; kind?: string }) {
+  async addPoint(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { x?: number; y?: number; description?: string; kind?: string; label?: string }) {
     const user = await this.me(req);
     const o = await this.order(id);
     const plan = await this.prisma.workPlan.findFirst({ where: { id: planId, orderId: id } });
     if (!plan) throw new NotFoundException('Planta não encontrada.');
+    const label = String(b.label ?? '').trim().slice(0, 40) || null;
     const x = Number(b.x), y = Number(b.y), description = String(b.description ?? '').trim().slice(0, 1000);
     if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) throw new BadRequestException('Ponto fora da imagem.');
     if (!description) throw new BadRequestException('Descreva o ponto marcado.');
     const last = await this.prisma.workPoint.aggregate({ where: { planId }, _max: { number: true } });
-    const point = await this.prisma.workPoint.create({ data: { planId, orderId: id, number: (last._max.number ?? 0) + 1, x, y, kind: ['ok', 'x'].includes(String(b.kind)) ? String(b.kind) : 'point', description, userId: user.id, userName: user.name } });
+    const point = await this.prisma.workPoint.create({ data: { planId, orderId: id, number: (last._max.number ?? 0) + 1, x, y, kind: ['ok', 'x'].includes(String(b.kind)) ? String(b.kind) : 'point', label: ['ok', 'x'].includes(String(b.kind)) ? null : label, description, userId: user.id, userName: user.name } });
     const snippet = description.length > 120 ? `${description.slice(0, 117)}...` : description;
-    await this.announce(o, user, `${KIND[point.kind] ?? 'Ponto'} ${point.number} marcado na planta '${plan.title}' por '${user.name}': ${snippet}`, `Novo ponto na OS ${this.fmt(o.number)}`, `${user.name} marcou ${(KIND[point.kind] ?? 'Ponto').toLowerCase()} ${point.number} na planta "${plan.title}": ${snippet}`);
+    await this.announce(o, user, `${point.label ?? KIND[point.kind] ?? 'Ponto'} ${point.number} marcado na planta '${plan.title}' por '${user.name}': ${snippet}`, `Novo ponto na OS ${this.fmt(o.number)}`, `${user.name} marcou ${(KIND[point.kind] ?? 'Ponto').toLowerCase()} ${point.number} na planta "${plan.title}": ${snippet}`);
     return point;
   }
 

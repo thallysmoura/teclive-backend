@@ -845,6 +845,7 @@ model WorkPoint {
   x           Float
   y           Float
   kind        String    @default("point") @db.VarChar(8)
+  label       String?   @db.VarChar(40)
   description String    @db.VarChar(1000)
   done        Boolean   @default(false)
   userId      String?
