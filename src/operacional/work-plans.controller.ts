@@ -191,13 +191,18 @@ export class WorkPlansController {
   }
 
   @Put(':planId/points/:pointId')
-  async updatePoint(@Req() req: Request, @Param('id') id: string, @Param('pointId') pointId: string, @Body() b: { description?: string; done?: boolean; x?: number; y?: number }) {
+  async updatePoint(@Req() req: Request, @Param('id') id: string, @Param('pointId') pointId: string, @Body() b: { description?: string; done?: boolean; x?: number; y?: number; kind?: string }) {
     const user = await this.me(req);
     const o = await this.order(id);
     const p = await this.prisma.workPoint.findFirst({ where: { id: pointId, orderId: id }, include: { plan: { select: { title: true } } } });
     if (!p) throw new NotFoundException('Ponto não encontrado.');
     if (user.role !== 'ADMIN' && p.userId !== user.id) throw new ForbiddenException('Você só pode alterar os seus próprios pontos.');
-    const data: { description?: string; done?: boolean; x?: number; y?: number } = {};
+    const data: { description?: string; done?: boolean; x?: number; y?: number; kind?: string; label?: string | null } = {};
+    if (b.kind !== undefined) {
+      if (user.role !== 'ADMIN') throw new ForbiddenException('Apenas administradores mudam o tipo do ponto.');
+      if (!['point', 'ok', 'x'].includes(b.kind)) throw new BadRequestException('Tipo inválido.');
+      data.kind = b.kind; if (b.kind !== 'point') data.label = null;
+    }
     if (b.x !== undefined || b.y !== undefined) {
       const x = Number(b.x), y = Number(b.y);
       if (!(x >= 0 && x <= 1 && y >= 0 && y <= 1)) throw new BadRequestException('Posição fora da imagem.');
