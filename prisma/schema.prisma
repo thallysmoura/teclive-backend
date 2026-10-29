@@ -27,6 +27,7 @@ model User {
   permissions   String[]       @default([])
   avatarUrl     String?
   phone         String?        @db.VarChar(20)
+  appAccess     Boolean        @default(false)
   lastLoginAt   DateTime?
   lastSeenAt    DateTime?
   lastDevice    String?

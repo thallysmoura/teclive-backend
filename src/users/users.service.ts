@@ -22,6 +22,7 @@ const SELECT_SAFE = {
   lastLoginAt: true,
   lastSeenAt: true,
   lastDevice: true,
+  appAccess: true,
   createdAt: true,
 } as const;
 
@@ -102,7 +103,11 @@ export class UsersService {
       orderBy: { createdAt: 'asc' },
     });
 
-    return users.map((user) => ({ ...user, presence: this.presence.get(user.id) }));
+    // Última localização compartilhada no login (site ou aplicativo), vinda do log de acesso.
+    const logs = await this.prisma.accessLog.findMany({ where: { userId: { in: users.map((u) => u.id) }, locationStatus: 'shared' }, orderBy: { createdAt: 'desc' }, select: { userId: true, city: true, region: true, latitude: true, longitude: true, createdAt: true } });
+    const loc = new Map<string, { city: string | null; region: string | null; latitude: number | null; longitude: number | null; at: Date }>();
+    for (const l of logs) if (l.userId && !loc.has(l.userId)) loc.set(l.userId, { city: l.city, region: l.region, latitude: l.latitude, longitude: l.longitude, at: l.createdAt });
+    return users.map((user) => ({ ...user, presence: this.presence.get(user.id), lastLocation: loc.get(user.id) ?? null }));
   }
 
   async createWithGeneratedPassword(params: { email: string; name: string; permissions: string[] }) {
@@ -183,6 +188,10 @@ export class UsersService {
     if (currentPassword === newPassword) throw new BadRequestException('A nova senha deve ser diferente da atual.');
     await this.prisma.user.update({ where: { id }, data: { passwordHash: await bcrypt.hash(newPassword, 10) } });
     return { ok: true };
+  }
+
+  async setAppAccess(id: string, enabled: boolean) {
+    return this.prisma.user.update({ where: { id }, data: { appAccess: enabled }, select: SELECT_SAFE });
   }
 
   async updateRole(id: string, role: Role) {

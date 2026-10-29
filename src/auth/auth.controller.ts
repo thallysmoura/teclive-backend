@@ -138,6 +138,7 @@ export class AuthController {
       permissions: user.permissions,
       avatarUrl: user.avatarUrl,
       phone: user.phone ?? '',
+      appAccess: user.appAccess,
     };
   }
 

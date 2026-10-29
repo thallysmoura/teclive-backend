@@ -219,6 +219,25 @@ export class ServiceOrdersService {
     return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size, url };
   }
 
+  /** Envia um vídeo (MP4, WEBM ou MOV, até 40 MB) para o Cloudflare R2 e devolve o id para anexar ao comentário. */
+  async uploadVideo(user: { id: string; name: string }, id: string, input: { fileName?: string; mimeType?: string; data: Buffer }) {
+    await this.load(id);
+    const mime = (input.mimeType ?? '').split(';')[0].toLowerCase();
+    const data = input.data;
+    if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) throw new BadRequestException('Envie um vídeo MP4, WEBM ou MOV.');
+    if (!data?.length) throw new BadRequestException('Arquivo vazio.');
+    if (data.length > 40 * 1024 * 1024) throw new BadRequestException('O vídeo deve ter no máximo 40 MB.');
+    const isWebm = data.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    const isIso = data.subarray(4, 8).toString('ascii') === 'ftyp';
+    if (!(isWebm || isIso)) throw new BadRequestException('O arquivo não é um vídeo válido.');
+    const ext = isWebm ? 'webm' : mime === 'video/quicktime' ? 'mov' : 'mp4';
+    const key = `os-videos/${createHash('sha256').update(data).digest('hex')}.${ext}`;
+    await this.storage.put(key, data, isWebm ? 'video/webm' : mime);
+    const url = this.storage.publicUrl(key);
+    const file = await this.prisma.serviceOrderFile.create({ data: { orderId: id, fileName: (input.fileName ?? 'video').slice(0, 200), mimeType: isWebm ? 'video/webm' : mime, size: data.length, fileUrl: url, userId: user.id, userName: user.name } });
+    return { id: file.id, fileName: file.fileName, mimeType: file.mimeType, size: file.size, url };
+  }
+
   async file(id: string, fileId: string) {
     const f = await this.prisma.serviceOrderFile.findFirst({ where: { id: fileId, orderId: id } });
     if (!f) throw new NotFoundException('Arquivo não encontrado.');

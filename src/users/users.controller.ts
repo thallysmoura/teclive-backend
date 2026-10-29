@@ -33,6 +33,11 @@ export class UsersController {
     return this.usersService.updatePermissions(id, dto.permissions);
   }
 
+  @Patch(':id/app-access')
+  setAppAccess(@Param('id') id: string, @Body() b: { enabled?: boolean }) {
+    return this.usersService.setAppAccess(id, !!b?.enabled);
+  }
+
   @Patch(':id/role')
   updateRole(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.usersService.updateRole(id, dto.role);

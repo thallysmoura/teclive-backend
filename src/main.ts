@@ -18,6 +18,7 @@ async function bootstrap() {
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'same-site' } }));
   app.useBodyParser('json', { limit: '4mb' });
   // Foto de perfil enviada como arquivo bruto (a tela já reduz para 512 px; o servidor ainda limita e confere o conteúdo).
+  app.useBodyParser('raw', { type: ['video/mp4', 'video/webm', 'video/quicktime'], limit: '50mb' });
   app.useBodyParser('raw', { type: ['image/webp', 'image/jpeg', 'image/png'], limit: '1500kb' });
   app.use(cookieParser());
   // CORS fechado: só a origem do app, com cookies e métodos conhecidos (nada de "*").

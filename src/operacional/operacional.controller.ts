@@ -65,6 +65,11 @@ export class ServiceOrdersController {
   @Put(':id/comments/:eventId') async editComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string, @Body() b: { text?: string }) { return this.service.editComment(await this.me(req), id, eventId, b?.text); }
   @Delete(':id/comments/:eventId') async deleteComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string) { return this.service.deleteComment(await this.me(req), id, eventId); }
   @Post(':id/files') async upload(@Req() req: Request, @Param('id') id: string, @Body() b: { fileName?: string; mimeType?: string; fileBase64?: string }) { return this.service.uploadFile(await this.me(req), id, b ?? {}); }
+  @Post(':id/videos') async uploadVideo(@Req() req: Request, @Param('id') id: string) {
+    const body = req.body as unknown;
+    if (!Buffer.isBuffer(body)) throw new BadRequestException('Envie um vídeo MP4, WEBM ou MOV.');
+    return this.service.uploadVideo(await this.me(req), id, { fileName: decodeURIComponent(String(req.headers['x-file-name'] ?? 'video')), mimeType: req.headers['content-type'], data: body });
+  }
   @Get(':id/files/:fileId') async file(@Param('id') id: string, @Param('fileId') fileId: string, @Res() res: Response) {
     const { fileName, mimeType, data } = await this.service.file(id, fileId);
     res.setHeader('Content-Type', mimeType);
