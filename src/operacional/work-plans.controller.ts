@@ -45,7 +45,7 @@ export class WorkPlansController {
   @Get()
   async list(@Param('id') id: string) {
     await this.order(id);
-    return this.prisma.workPlan.findMany({ where: { orderId: id }, orderBy: { createdAt: 'desc' }, include: { points: { orderBy: { number: 'asc' } }, strokes: { orderBy: { createdAt: 'asc' } } } });
+    return this.prisma.workPlan.findMany({ where: { orderId: id }, orderBy: { createdAt: 'desc' }, include: { points: { orderBy: { number: 'asc' } }, strokes: { orderBy: { createdAt: 'asc' } }, checklists: { orderBy: { createdAt: 'asc' }, include: { items: { orderBy: { sortOrder: 'asc' } } } } } });
   }
 
   @Post()
@@ -65,7 +65,88 @@ export class WorkPlansController {
     const title = String(b.title ?? b.fileName ?? 'Planta').trim().slice(0, 200) || 'Planta';
     const plan = await this.prisma.workPlan.create({ data: { orderId: id, title, fileUrl: this.storage.publicUrl(key), userId: user.id, userName: user.name } });
     await this.announce(o, user, `Planta '${title}' anexada em Gestão de Obras por '${user.name}'`, `Nova planta na OS ${this.fmt(o.number)}`, `${user.name} anexou a planta "${title}".`);
-    return { ...plan, points: [], strokes: [] };
+    return { ...plan, points: [], strokes: [], checklists: [] };
+  }
+
+  /** Dá nome à planta no histórico (ex.: Infraestrutura, Instalação). */
+  @Put(':planId')
+  async renamePlan(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { title?: string }) {
+    const user = await this.me(req);
+    const o = await this.order(id);
+    const plan = await this.prisma.workPlan.findFirst({ where: { id: planId, orderId: id } });
+    if (!plan) throw new NotFoundException('Planta não encontrada.');
+    const title = String(b.title ?? '').trim().slice(0, 200);
+    if (!title) throw new BadRequestException('Dê um nome para a planta.');
+    await this.prisma.workPlan.update({ where: { id: planId }, data: { title } });
+    await this.announce(o, user, `Planta '${plan.title}' renomeada para '${title}' por '${user.name}'`, `Planta renomeada na OS ${this.fmt(o.number)}`, `${user.name} renomeou a planta para "${title}".`);
+    return { ok: true };
+  }
+
+  @Post(':planId/checklists')
+  async addChecklist(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Body() b: { title?: string; items?: string[] }) {
+    const user = await this.me(req);
+    const o = await this.order(id);
+    const plan = await this.prisma.workPlan.findFirst({ where: { id: planId, orderId: id } });
+    if (!plan) throw new NotFoundException('Planta não encontrada.');
+    const title = String(b.title ?? '').trim().slice(0, 160);
+    if (!title) throw new BadRequestException('Dê um nome para o checklist.');
+    const items = (Array.isArray(b.items) ? b.items : []).map((t) => String(t).trim().slice(0, 300)).filter(Boolean).slice(0, 50);
+    const c = await this.prisma.workChecklist.create({ data: { planId, title, userName: user.name, items: { create: items.map((text, i) => ({ text, sortOrder: i })) } }, include: { items: { orderBy: { sortOrder: 'asc' } } } });
+    await this.announce(o, user, `Checklist '${title}' criado na planta '${plan.title}' por '${user.name}'`, `Novo checklist na OS ${this.fmt(o.number)}`, `${user.name} criou o checklist "${title}" na planta "${plan.title}".`);
+    return c;
+  }
+
+  @Put(':planId/checklists/:cid')
+  async renameChecklist(@Param('id') id: string, @Param('planId') planId: string, @Param('cid') cid: string, @Body() b: { title?: string }) {
+    const title = String(b.title ?? '').trim().slice(0, 160);
+    if (!title) throw new BadRequestException('Dê um nome para o checklist.');
+    const r = await this.prisma.workChecklist.updateMany({ where: { id: cid, planId, plan: { orderId: id } }, data: { title } });
+    if (!r.count) throw new NotFoundException('Checklist não encontrado.');
+    return { ok: true };
+  }
+
+  @Delete(':planId/checklists/:cid')
+  async removeChecklist(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Param('cid') cid: string) {
+    const user = await this.me(req);
+    const c = await this.prisma.workChecklist.findFirst({ where: { id: cid, planId, plan: { orderId: id } } });
+    if (!c) throw new NotFoundException('Checklist não encontrado.');
+    if (user.role !== 'ADMIN' && c.userName !== user.name) throw new ForbiddenException('Você só pode excluir os seus checklists.');
+    await this.prisma.workChecklist.delete({ where: { id: cid } });
+    return { ok: true };
+  }
+
+  @Post(':planId/checklists/:cid/items')
+  async addItem(@Param('id') id: string, @Param('planId') planId: string, @Param('cid') cid: string, @Body() b: { text?: string }) {
+    const c = await this.prisma.workChecklist.findFirst({ where: { id: cid, planId, plan: { orderId: id } } });
+    if (!c) throw new NotFoundException('Checklist não encontrado.');
+    const text = String(b.text ?? '').trim().slice(0, 300);
+    if (!text) throw new BadRequestException('Escreva o item.');
+    const last = await this.prisma.workChecklistItem.aggregate({ where: { checklistId: cid }, _max: { sortOrder: true } });
+    return this.prisma.workChecklistItem.create({ data: { checklistId: cid, text, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+  }
+
+  @Put(':planId/checklists/:cid/items/:iid')
+  async updateItem(@Req() req: Request, @Param('id') id: string, @Param('planId') planId: string, @Param('cid') cid: string, @Param('iid') iid: string, @Body() b: { text?: string; done?: boolean }) {
+    const user = await this.me(req);
+    const o = await this.order(id);
+    const item = await this.prisma.workChecklistItem.findFirst({ where: { id: iid, checklistId: cid, checklist: { planId, plan: { orderId: id } } }, include: { checklist: { select: { title: true } } } });
+    if (!item) throw new NotFoundException('Item não encontrado.');
+    const data: { text?: string; done?: boolean; doneBy?: string | null; doneAt?: Date | null } = {};
+    if (b.text !== undefined) { const t = String(b.text).trim().slice(0, 300); if (!t) throw new BadRequestException('Escreva o item.'); data.text = t; }
+    if (typeof b.done === 'boolean') { data.done = b.done; data.doneBy = b.done ? user.name : null; data.doneAt = b.done ? new Date() : null; }
+    const upd = await this.prisma.workChecklistItem.update({ where: { id: iid }, data });
+    if (data.done) {
+      const left = await this.prisma.workChecklistItem.count({ where: { checklistId: cid, done: false } });
+      if (left === 0) await this.announce(o, user, `Checklist '${item.checklist.title}' concluído por '${user.name}'`, `Checklist concluído na OS ${this.fmt(o.number)}`, `${user.name} concluiu o checklist "${item.checklist.title}".`);
+    }
+    return upd;
+  }
+
+  @Delete(':planId/checklists/:cid/items/:iid')
+  async removeItem(@Param('id') id: string, @Param('planId') planId: string, @Param('cid') cid: string, @Param('iid') iid: string) {
+    const r = await this.prisma.workChecklistItem.deleteMany({ where: { id: iid, checklistId: cid, checklist: { planId, plan: { orderId: id } } } });
+    if (!r.count) throw new NotFoundException('Item não encontrado.');
+    return { ok: true };
   }
 
   @Post(':planId/points')

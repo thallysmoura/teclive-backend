@@ -829,6 +829,7 @@ model WorkPlan {
   createdAt DateTime    @default(now())
   points    WorkPoint[]
   strokes   WorkStroke[]
+  checklists WorkChecklist[]
 
   @@index([orderId, createdAt(sort: Desc)])
   @@map("work_plans")
@@ -1119,4 +1120,32 @@ model FinOperation {
   createdAt   DateTime @default(now())
 
   @@map("fin_operations")
+}
+
+/// Checklists criados abaixo da planta.
+model WorkChecklist {
+  id        String              @id @default(uuid())
+  planId    String
+  plan      WorkPlan            @relation(fields: [planId], references: [id], onDelete: Cascade)
+  title     String              @db.VarChar(160)
+  userName  String              @db.VarChar(200)
+  createdAt DateTime            @default(now())
+  items     WorkChecklistItem[]
+
+  @@index([planId])
+  @@map("work_checklists")
+}
+
+model WorkChecklistItem {
+  id          String        @id @default(uuid())
+  checklistId String
+  checklist   WorkChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  text        String        @db.VarChar(300)
+  done        Boolean       @default(false)
+  doneBy      String?       @db.VarChar(200)
+  doneAt      DateTime?
+  sortOrder   Int           @default(0)
+
+  @@index([checklistId])
+  @@map("work_checklist_items")
 }
