@@ -946,3 +946,81 @@ model OsFolderItem {
   @@index([folderId])
   @@map("os_folder_items")
 }
+
+/// Faturamento: faturas de serviços e de produtos (da Central de Faturamento).
+model Invoice {
+  id             String   @id @default(uuid())
+  number         Int      @unique
+  kind           String   @db.VarChar(1)
+  origin         String   @db.VarChar(10)
+  originRef      String?  @db.VarChar(20)
+  personId       String?
+  personName     String   @db.VarChar(250)
+  competence     String   @db.VarChar(5)
+  registeredAt   DateTime
+  createdBy      String   @db.VarChar(200)
+  total          Decimal  @db.Decimal(14, 2)
+  titleGenerated Boolean  @default(false)
+  status         String   @default("FATURADA") @db.VarChar(10)
+  nfseNumber     Int?
+  nfeNumber      String?  @db.VarChar(20)
+  description    String?  @db.VarChar(500)
+  createdAt      DateTime @default(now())
+
+  @@index([kind, number(sort: Desc)])
+  @@map("invoices")
+}
+
+model NfseRecord {
+  rps           Int      @id
+  invoiceNumber Int
+  lote          String   @db.VarChar(10)
+  nfseNumber    Int
+  issuedAt      DateTime
+  personName    String   @db.VarChar(250)
+  total         Decimal  @db.Decimal(14, 2)
+  status        String   @db.VarChar(1)
+
+  @@map("nfse_records")
+}
+
+model NfeRecord {
+  number        Int      @id
+  personName    String   @db.VarChar(250)
+  status        String   @db.VarChar(1)
+  issuedAt      DateTime
+  kindLabel     String   @db.VarChar(60)
+  invoiceNumber Int?
+  exitDate      DateTime?
+  accessKey     String   @db.VarChar(60)
+  total         Decimal? @db.Decimal(14, 2)
+
+  @@map("nfe_records")
+}
+
+model ReturnNote {
+  id         String   @id @default(uuid())
+  number     Int?
+  date       DateTime
+  personName String   @db.VarChar(250)
+  kindLabel  String   @db.VarChar(60)
+  originNf   String   @db.VarChar(20)
+  status     String   @db.VarChar(20)
+  createdAt  DateTime @default(now())
+
+  @@map("return_notes")
+}
+
+model PurchaseNote {
+  id           String   @id @default(uuid())
+  number       String   @db.VarChar(20)
+  supplierName String   @db.VarChar(250)
+  entryDate    DateTime
+  issueDate    DateTime
+  operation    String   @db.VarChar(80)
+  total        Decimal  @db.Decimal(14, 2)
+  status       String   @db.VarChar(12)
+  createdAt    DateTime @default(now())
+
+  @@map("purchase_notes")
+}
