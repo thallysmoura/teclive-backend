@@ -58,12 +58,13 @@ export class ServiceOrdersController {
   @Get('management') management() { return this.service.management(); }
   @Post('from-quote/:quoteId') async fromQuote(@Req() req: Request, @Param('quoteId') quoteId: string) { return this.service.createFromQuote(await this.user(req), quoteId); }
   @Get('operations') operations() { return this.service.operations(); }
+  @Get('comment-users') commentUsers() { return this.service.commentUsers(); }
   @Get(':id') get(@Param('id') id: string) { return this.service.get(id); }
   @Post() async create(@Req() req: Request, @Body() b: OsInput) { return this.service.create(await this.user(req), b); }
   @Put(':id/technical-sheet') async technicalSheet(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string | null }) { return this.service.setTechnicalSheet(await this.me(req), id, typeof b.text === 'string' ? b.text : null); }
   @Put(':id') async update(@Req() req: Request, @Param('id') id: string, @Body() b: OsInput) { return this.service.update(await this.user(req), id, b); }
   @Get(':id/comments') comments(@Param('id') id: string) { return this.service.comments(id); }
-  @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: { text?: string; fileIds?: string[] }) { return this.service.comment(await this.me(req), id, b ?? {}); }
+  @Post(':id/comments') async comment(@Req() req: Request, @Param('id') id: string, @Body() b: Parameters<ServiceOrdersService['comment']>[2]) { return this.service.comment(await this.me(req), id, b ?? {}); }
   @Put(':id/comments/:eventId') async editComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string, @Body() b: { text?: string }) { return this.service.editComment(await this.me(req), id, eventId, b?.text); }
   @Delete(':id/comments/:eventId') async deleteComment(@Req() req: Request, @Param('id') id: string, @Param('eventId') eventId: string) { return this.service.deleteComment(await this.me(req), id, eventId); }
   @Post(':id/files') async upload(@Req() req: Request, @Param('id') id: string, @Body() b: { fileName?: string; mimeType?: string; fileBase64?: string }) { return this.service.uploadFile(await this.me(req), id, b ?? {}); }

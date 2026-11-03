@@ -249,7 +249,11 @@ export class ServiceOrdersService {
     return { fileName: f.fileName, mimeType: f.mimeType, data: Buffer.from(f.fileData ?? []) };
   }
 
-  async comment(user: { id: string; name: string }, id: string, input: { text?: string; fileIds?: string[] }) {
+  commentUsers() {
+    return this.prisma.user.findMany({ where: { status: 'ACTIVE' }, select: { id: true, name: true, avatarUrl: true }, orderBy: { name: 'asc' } });
+  }
+
+  async comment(user: { id: string; name: string }, id: string, input: { text?: string; fileIds?: string[]; replyToKey?: string; mentionIds?: string[] }) {
     const o = await this.load(id);
     const content = (input.text ?? '').trim();
     const fileIds = [...new Set(input.fileIds ?? [])].slice(0, 8);
@@ -257,15 +261,22 @@ export class ServiceOrdersService {
     if (content.length > 4000) throw new BadRequestException('O comentário deve ter no máximo 4000 caracteres.');
     const files = fileIds.length ? await this.prisma.serviceOrderFile.findMany({ where: { id: { in: fileIds }, orderId: id }, select: { id: true, fileName: true, mimeType: true, size: true, fileUrl: true } }) : [];
     const d = (o.detail ?? {}) as Detail;
-    d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, anexos: files.map(({ fileUrl, ...f }) => ({ ...f, url: fileUrl ?? undefined })) }];
+    const original = input.replyToKey ? (d.eventos ?? []).find((e) => (e.id ?? `legacy:${String(e.dataRegistro)}:${String(e.usuario)}`) === input.replyToKey) : undefined;
+    if (input.replyToKey && !original) throw new BadRequestException('Comentário original não encontrado nesta OS.');
+    const mentionIds = Array.isArray(input.mentionIds) ? [...new Set(input.mentionIds.filter((v): v is string => typeof v === 'string'))].slice(0, 20) : [];
+    const mentioned = mentionIds.length ? await this.prisma.user.findMany({ where: { id: { in: mentionIds }, status: 'ACTIVE' }, select: { id: true, name: true } }) : [];
+    const mentions = mentioned.filter((u) => content.includes(`@${u.name}`)).map(({ id: userId, name }) => ({ id: userId, name }));
+    const replyTo = original ? { key: input.replyToKey!, usuario: String(original.usuario), conteudo: typeof original.conteudo === 'string' ? original.conteudo.slice(0, 500) : null, dataRegistro: String(original.dataRegistro) } : null;
+    d.eventos = [...(d.eventos ?? []), { tipo: 0, id: randomUUID(), conteudo: content || null, dataRegistro: new Date().toISOString(), usuario: user.name, usuarioId: user.id, registroId: null, replyTo, mentions, anexos: files.map(({ fileUrl, ...f }) => ({ ...f, url: fileUrl ?? undefined })) }];
     const updated = await this.touch(id, {}, d, { user: user.name, text: `Comentário adicionado por '${user.name}'` });
     // Administradores recebem como notificação não lida e vão direto para a OS.
     const admins = await this.prisma.user.findMany({ where: { role: 'ADMIN' }, select: { id: true } });
-    if (admins.length) {
+    const recipients = [...new Set([...admins.map((a) => a.id), ...mentions.filter((m) => m.id !== user.id).map((m) => m.id)])];
+    if (recipients.length) {
       const number = String(Math.floor(o.number / 1000)).padStart(3, '0') + '.' + String(o.number % 1000).padStart(3, '0');
       const snippet = content ? (content.length > 120 ? `${content.slice(0, 117)}...` : content) : `${files.length} imagem(ns)`;
       await this.prisma.notification.createMany({
-        data: admins.map((a) => ({ userId: a.id, title: `Novo comentário na OS ${number}`, message: `${user.name}: ${snippet}`, data: { type: 'os-comment', serviceOrderId: id, url: `/operacional/ordens-servico?os=${id}` } })),
+        data: recipients.map((userId) => ({ userId, title: mentions.some((m) => m.id === userId) ? `Você foi mencionado na OS ${number}` : `Novo comentário na OS ${number}`, message: `${user.name}: ${snippet}`, data: { type: 'os-comment', serviceOrderId: id, url: `/operacional/ordens-servico?os=${id}` } })),
       });
       this.ops.notifyAdmins();
     }

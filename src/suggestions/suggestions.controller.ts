@@ -18,6 +18,19 @@ const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.replace(/\
 export class SuggestionsController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Avisa todos os administradores (menos quem fez a ação) sobre uma sugestão nova ou editada. */
+  private async notifyAdmins(actorId: string, id: string, title: string, verb: 'enviou' | 'editou', suggestionTitle: string, authorName?: string) {
+    const [actor, admins] = await Promise.all([
+      this.prisma.user.findUnique({ where: { id: actorId }, select: { name: true, avatarUrl: true } }),
+      this.prisma.user.findMany({ where: { role: 'ADMIN', id: { not: actorId } }, select: { id: true } }),
+    ]);
+    if (!admins.length) return;
+    const at = new Date().toISOString();
+    const by = actor?.name ?? 'Alguém';
+    const message = verb === 'enviou' ? `${by} enviou uma sugestão de melhoria: "${suggestionTitle}".` : `${by} editou a sugestão "${suggestionTitle}"${authorName && authorName !== by ? ` (de ${authorName})` : ''}.`;
+    await this.prisma.notification.createMany({ data: admins.map((a) => ({ userId: a.id, title, message, data: { type: 'suggestion', suggestionId: id, at, url: '/sugestoes', name: actor?.name, avatarUrl: actor?.avatarUrl ?? null } })) });
+  }
+
   private async isAdmin(req: Request) {
     const u = await this.prisma.user.findUnique({ where: { id: (req.user as { id: string }).id }, select: { role: true } });
     return u?.role === 'ADMIN';
@@ -53,10 +66,12 @@ export class SuggestionsController {
       if (!ok) throw new BadRequestException('O arquivo não é uma imagem válida.');
     }
 
-    return this.prisma.suggestion.create({
+    const created = await this.prisma.suggestion.create({
       data: { userId, category, title, description, screenPath, screenTitle: clean(body.screenTitle, 200) || screenPath, imageData: imageData || null, viewport: clean(body.viewport, 40) || null, userAgent: clean(req.headers['user-agent'], 300) || null },
       select: { id: true, createdAt: true },
     });
+    await this.notifyAdmins(userId, created.id, 'Nova sugestão de melhoria', 'enviou', title).catch(() => undefined);
+    return created;
   }
 
   /** Lista leve (sem o base64): a imagem de cada sugestão vem de GET :id/image. */
@@ -106,10 +121,13 @@ export class SuggestionsController {
   async edit(@Req() req: Request, @Param('id') id: string, @Body() body: { description?: string }) {
     const description = typeof body.description === 'string' ? body.description.trim().slice(0, 4000) : '';
     if (description.length < 10) throw new BadRequestException('Descreva a melhoria com um pouco mais de detalhe.');
-    const current = await this.prisma.suggestion.findUnique({ where: { id }, select: { userId: true } });
+    const current = await this.prisma.suggestion.findUnique({ where: { id }, select: { userId: true, user: { select: { name: true } } } });
     if (!current) throw new NotFoundException('Sugestão não encontrada.');
     if (current.userId !== (req.user as { id: string }).id && !(await this.isAdmin(req))) throw new ForbiddenException('Só quem enviou ou um administrador pode editar.');
     await this.prisma.suggestion.update({ where: { id }, data: { description, title: clean(description.split(/\n\nObservações/)[0], 80) || 'Sugestão de melhoria' } });
+    const actorId = (req.user as { id: string }).id;
+    const newTitle = clean(description.split(/\n\nObservações/)[0], 80) || 'Sugestão de melhoria';
+    await this.notifyAdmins(actorId, id, 'Sugestão editada', 'editou', newTitle, current.user.name).catch(() => undefined);
     return { ok: true };
   }
 
